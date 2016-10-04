@@ -141,7 +141,7 @@ namespace ConfigMgrWebService
                                             if (deploymentInfoSearcher.Get() != null)
                                                 foreach (ManagementObject deployment in deploymentInfoSearcher.Get())
                                                 {
-                                                    //' Return application name
+                                                    //' Return application object
                                                     string targetName = (string)deployment.GetPropertyValue("TargetName");
                                                     string collectionName = (string)deployment.GetPropertyValue("CollectionName");
                                                     Application targetApplication = new Application();
