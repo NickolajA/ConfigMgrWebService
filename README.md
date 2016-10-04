@@ -14,7 +14,7 @@ This web service was designed to extend the functionality of Operating System De
 To successfully run this web service, you'll need to have IIS installed on a member server with ASP.NET enabled. Easiest way to get going is to install the ConfigMgrWebService on the same server as where your Management Point role is hosted. You'll also need to have a service account for the application pool in IIS. It's recommended that you add the service account in ConfigMgr with Full Administrator privileges.
 
 1. Download the project and compile the solution in Visual Studio (you can download the free version called Visual Studio Community Edition)
-2. Create a folder in C:\inetpub called ConfigMgrWebService. Inside that folder, create a folder called bin.
+2. Create a folder in <b>C:\inetpub</b> called ConfigMgrWebService. Inside that folder, create a folder called bin.
 3. Copy the compiled ConfigMgrWebService.dll to C:\inetpub\ConfigMgrWebService\bin.
 4. Rename Web.Release.Config to Web.Config and copy it to C:\inetpub\ConfigMgrWebService.
 5. Copy ConfigMgrWebService.asmx to C:\inetpub\ConfigMgrWebService.
