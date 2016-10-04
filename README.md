@@ -18,3 +18,4 @@ To successfully run this web service, you'll need to have IIS installed on a mem
 3. Copy the compiled ConfigMgrWebService.dll to C:\inetpub\ConfigMgrWebService\bin.
 4. Rename Web.Release.Config to Web.Config and copy it to C:\inetpub\ConfigMgrWebService.
 5. Copy ConfigMgrWebService.asmx to C:\inetpub\ConfigMgrWebService.
+6. Locate AdminUI.WqlQueryEngine.dll and Microsoft.ConfigurationManagement.ManagementProvider.dll in the ConfigMgr console installation location and copy them to C:\inetpub\ConfigMgrWebService\bin.
