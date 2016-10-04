@@ -7,7 +7,7 @@ namespace ConfigMgrWebService
 {
     public class taskSequence
     {
-        public string Name { get; set; }
+        public string PackageName { get; set; }
         public string AdvertisementId { get; set; }
         public int AdvertFlags { get; set; }
     }

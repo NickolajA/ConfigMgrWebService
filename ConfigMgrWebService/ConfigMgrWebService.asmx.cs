@@ -18,8 +18,6 @@ namespace ConfigMgrWebService
 
     public class ConfigMgrWebService : System.Web.Services.WebService
     {
-        //' Implement logging, normal and debug?
-
         //' Read required application settings from web.config
         private string secretKey = WebConfigurationManager.AppSettings["SecretKey"];
         private string siteServer = WebConfigurationManager.AppSettings["SiteServer"];
@@ -39,7 +37,7 @@ namespace ConfigMgrWebService
             }
             else
             {
-                //' Query SMS_UserMachineRelationship SMS Provider class for instances
+                //' Query for user relationship instances
                 SelectQuery relationQuery = new SelectQuery("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceName like '" + deviceName + "'");
                 ManagementScope managementScope = new ManagementScope("\\\\" + siteServer + "\\root\\SMS\\site_" + siteCode);
                 managementScope.Connect();
@@ -48,9 +46,11 @@ namespace ConfigMgrWebService
                 if (managementObjectSearcher != null)
                     foreach (var userRelation in managementObjectSearcher.Get())
                     {
+                        //' Return user name
                         string userName = (string) userRelation.GetPropertyValue("UniqueUserName");
                         relations.Add(userName);
                     }
+                //' Return empty
                 return relations;
             }
         }
@@ -69,7 +69,7 @@ namespace ConfigMgrWebService
             }
             else
             {
-                //' Query SMS_UserMachineRelationship SMS Provider class for instances
+                //' Query for device relationship instances
                 SelectQuery relationQuery = new SelectQuery("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceName like '" + userName + "'");
                 ManagementScope managementScope = new ManagementScope("\\\\" + siteServer + "\\root\\SMS\\site_" + siteCode);
                 managementScope.Connect();
@@ -78,27 +78,29 @@ namespace ConfigMgrWebService
                 if (managementObjectSearcher != null)
                     foreach (var deviceRelation in managementObjectSearcher.Get())
                     {
+                        //' Return device name
                         string deviceName = (string) deviceRelation.GetPropertyValue("Device"); //' <--- this property needs to be verified
                         relations.Add(deviceName);
                     }
+                //' Return empty
                 return relations;
             }
         }
 
         [WebMethod(Description = "Get deployed applications for a specific user")]
-        public List<string> GetDeployedApplicationsByUser(string userName, string secret)
+        public List<Application> GetDeployedApplicationsByUser(string userName, string secret)
         {
             //' Construct applications list
-            var applicationNames = new List<string>();
+            var applicationNames = new List<Application>();
 
             //' Validate secret key
             if (secret != secretKey)
             {
-                applicationNames.Add("A secret key was not specified or cannot be validated");
-                return applicationNames;
+                return null;
             }
             else
             {
+                //' Query for specified user
                 SelectQuery userQuery = new SelectQuery("SELECT * FROM SMS_R_User WHERE UserName like '" + userName + "'");
                 ManagementScope managementScope = new ManagementScope("\\\\" + siteServer + "\\root\\SMS\\site_" + siteCode);
                 managementScope.Connect();
@@ -108,42 +110,54 @@ namespace ConfigMgrWebService
                     if (managementObjectSearcher.Get().Count == 1)
                         foreach (ManagementObject user in managementObjectSearcher.Get())
                         {
+                            //' Define properties from user
                             string userNameProperty = (string)user.GetPropertyValue("UserName");
                             var resourceIDProperty = user.GetPropertyValue("ResourceId");
 
+                            //' Query for collection memberships relations for user
                             SelectQuery collMembershipQuery = new SelectQuery("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID like '" + resourceIDProperty.ToString() + "'");
                             ManagementObjectSearcher collMembershipSearcher = new ManagementObjectSearcher(managementScope, collMembershipQuery);
 
                             if (collMembershipSearcher.Get() != null)
                                 foreach (ManagementObject collUser in collMembershipSearcher.Get())
                                 {
+                                    //' Define properties for collection
                                     string collectionId = (string)collUser.GetPropertyValue("CollectionID");
 
+                                    //' Query for collection
                                     SelectQuery collectionQuery = new SelectQuery("SELECT * FROM SMS_Collection WHERE CollectionID like '" + collectionId + "'");
                                     ManagementObjectSearcher collectionSearcher = new ManagementObjectSearcher(managementScope, collectionQuery);
 
                                     if (collectionSearcher.Get() != null)
                                         foreach (ManagementObject collection in collectionSearcher.Get())
                                         {
+                                            //' Define properties for collection
                                             var collId = collection.GetPropertyValue("CollectionID");
 
+                                            //' Query for deployment info for collection
                                             SelectQuery deploymentInfoQuery = new SelectQuery("SELECT * FROM SMS_DeploymentInfo WHERE CollectionID like '" + collId + "' AND DeploymentType = 31");
                                             ManagementObjectSearcher deploymentInfoSearcher = new ManagementObjectSearcher(managementScope, deploymentInfoQuery);
 
                                             if (deploymentInfoSearcher.Get() != null)
                                                 foreach (ManagementObject deployment in deploymentInfoSearcher.Get())
                                                 {
+                                                    //' Return application name
                                                     string targetName = (string)deployment.GetPropertyValue("TargetName");
-                                                    applicationNames.Add(targetName);
+                                                    string collectionName = (string)deployment.GetPropertyValue("CollectionName");
+                                                    Application targetApplication = new Application();
+                                                    targetApplication.ApplicationName = targetName;
+                                                    targetApplication.CollectionName = collectionName;
+                                                    applicationNames.Add(targetApplication);
                                                 }
                                         }
                                 }
                         }
+                //' Return empty
                 return applicationNames;
             }
         }
 
-        [WebMethod(Description = "Get edployed applications foro a specific device")]
+        [WebMethod(Description = "Get deployed applications for a specific device")]
         public List<string> GetDeployedApplicationsByDevice(string deviceName, string secret)
         {
             //' Construct applications list
@@ -157,6 +171,7 @@ namespace ConfigMgrWebService
             }
             else
             {
+                //' Query for specified device name
                 SelectQuery deviceQuery = new SelectQuery("SELECT * FROM SMS_R_System WHERE Name like '" + deviceName + "'");
                 ManagementScope managementScope = new ManagementScope("\\\\" + siteServer + "\\root\\SMS\\site_" + siteCode);
                 managementScope.Connect();
@@ -166,47 +181,53 @@ namespace ConfigMgrWebService
                     if (managementObjectSearcher.Get().Count == 1)
                         foreach (ManagementObject device in managementObjectSearcher.Get())
                         {
+                            //' Define property variables from device
                             string deviceNameProperty = (string)device.GetPropertyValue("Name");
                             var resourceIDProperty = device.GetPropertyValue("ResourceId");
 
+                            //' Query for collection membership relations for device
                             SelectQuery collMembershipQuery = new SelectQuery("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID like '" + resourceIDProperty.ToString() + "'");
                             ManagementObjectSearcher collMembershipSearcher = new ManagementObjectSearcher(managementScope, collMembershipQuery);
 
                             if (collMembershipSearcher.Get() != null)
                                 foreach (ManagementObject collDevice in collMembershipSearcher.Get())
                                 {
+                                    //' Define property variables for collection
                                     string collectionId = (string)collDevice.GetPropertyValue("CollectionID");
 
+                                    //' Query for collection
                                     SelectQuery collectionQuery = new SelectQuery("SELECT * FROM SMS_Collection WHERE CollectionID like '" + collectionId + "'");
                                     ManagementObjectSearcher collectionSearcher = new ManagementObjectSearcher(managementScope, collectionQuery);
 
                                     if (collectionSearcher.Get() != null)
                                         foreach (ManagementObject collection in collectionSearcher.Get())
                                         {
+                                            //' Define collection properties
                                             var collId = collection.GetPropertyValue("CollectionID");
 
+                                            //' Query for deployment info for collection
                                             SelectQuery deploymentInfoQuery = new SelectQuery("SELECT * FROM SMS_DeploymentInfo WHERE CollectionID like '" + collId + "' AND DeploymentType = 31");
                                             ManagementObjectSearcher deploymentInfoSearcher = new ManagementObjectSearcher(managementScope, deploymentInfoQuery);
 
                                             if (deploymentInfoSearcher.Get() != null)
                                                 foreach (ManagementObject deployment in deploymentInfoSearcher.Get())
                                                 {
+                                                    //' Return application name
                                                     string targetName = (string)deployment.GetPropertyValue("TargetName");
-                                                    //'UInt32 deploymentType = (UInt32)deployment.GetPropertyValue("DeploymentType");
-                                                    //'if (deploymentType == 31)
                                                     applicationNames.Add(targetName);
                                                 }
                                         }
                                 }
                         }
+                //' Return empty
                 return applicationNames;
             }
         }
 
         [WebMethod(Description = "Get hidden task sequence deployments")]
-        public List<taskSequence> GetHiddenTaskSequenceDeployment(string secret)
+        public List<taskSequence> GetHiddenTaskSequenceDeployments(string secret)
         {
-            //' Construct applications list
+            //' Construct hidden task sequences list
             var hiddenTaskSequences = new List<taskSequence>();
 
             //' Validate secret key
@@ -220,24 +241,29 @@ namespace ConfigMgrWebService
                 smsProvider smsProvider = new smsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
+                //' Define query string
                 string query = "SELECT * FROM SMS_AdvertisementInfo WHERE PackageType = 4";
+
+                //' Query for Task Sequence package
                 IResultObject queryResults = connection.QueryProcessor.ExecuteQuery(query);
 
                 foreach (IResultObject queryResult in queryResults)
                 {
+                    //' Collect property values from instance
                     string taskSequenceName = queryResult["PackageName"].StringValue;
                     string advertId = queryResult["AdvertisementId"].StringValue;
                     int advertFlags = queryResult["AdvertFlags"].IntegerValue;
 
+                    //' Construct new taskSequence class object and define properties
                     taskSequence returnObject = new taskSequence();
-                    returnObject.Name = taskSequenceName;
+                    returnObject.PackageName = taskSequenceName;
                     returnObject.AdvertFlags = advertFlags;
                     returnObject.AdvertisementId = advertId;
 
+                    //' Add object to list if bit exists
                     if ((advertFlags & 0x20000000) != 0)
                         hiddenTaskSequences.Add(returnObject);
                 }
-
                 return hiddenTaskSequences;
             }
         }
@@ -256,18 +282,26 @@ namespace ConfigMgrWebService
                 smsProvider smsProvider = new smsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Query for Boot Image instance
-                IResultObject queryResult = connection.GetInstance("SMS_BootImagePackage.PackageID='" + packageId + "'");
+                try
+                {
+                    //' Query for Boot Image instance
+                    IResultObject queryResult = connection.GetInstance("SMS_BootImagePackage.PackageID='" + packageId + "'");
 
-                if (queryResult != null)
-                {
-                    //' Return SourceVersion property from instance
-                    int sourceVersion = queryResult["SourceVersion"].IntegerValue;
-                    return sourceVersion.ToString();
+                    if (queryResult != null)
+                    {
+                        //' Return SourceVersion property from instance
+                        int sourceVersion = queryResult["SourceVersion"].IntegerValue;
+                        return sourceVersion.ToString();
+                    }
+                    else
+                    {
+                        return "Unable to find any Boot Images";
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    return "Unable to find any Boot Images";
+                    Trace.WriteLine(DateTime.Now + ": Unhandled exception occured: " + ex.ToString());
+                    return "Unhandled exception occured";
                 }
             }
         }
