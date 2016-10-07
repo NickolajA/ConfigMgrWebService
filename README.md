@@ -56,7 +56,32 @@ When calling the web service methods, you'll need to pass along a secret key tha
 
 ### Available Methods
 
-#### Get Primary User by Device
-This method returns every primary user that's defined for a specified device.
+#### GetPrimaryUserByDevice
+This method returns all primary user associated for a specified device.
 ##### Parameters
 deviceName (string), secretKey (string)
+
+#### GetPrimaryDeviceByUser
+This methods returns all primary devices associated with a specified user.
+##### Parameters
+userName (string), secretKey (string)
+
+#### GetDeployedApplicationsByUser
+This methods returns a list of all applications deployed targeting a specified user.
+##### Parameters
+userName (string), secretKey (string)
+
+#### GetDeployedApplicationsByDevice
+This methods returns a list of all applications deployed targeting a specified device.
+##### Parameters
+deviceName (string), secretKey (string)
+
+#### GetHiddenTaskSequenceDeployments
+This method returns a list of all task sequences deployed (available and required) as hidden.
+##### Parameters
+secretKey (string)
+
+#### GetBootImageSourceVersion
+This method returns the source version of a specified Boot Image.
+#### Parameters
+packageId (string), secretKey (string)
