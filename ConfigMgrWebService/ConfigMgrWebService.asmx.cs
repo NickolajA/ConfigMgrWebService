@@ -12,7 +12,7 @@ using Microsoft.ConfigurationManagement.ManagementProvider.WqlQueryEngine;
 
 namespace ConfigMgrWebService
 {
-    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr 2012+ developed by Nickolaj Andersen", Namespace = "http://www.scconfigmgr.com")]
+    [WebService(Name = "ConfigMgr Web Service 1.0.0", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen", Namespace = "http://www.scconfigmgr.com")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
     [System.ComponentModel.ToolboxItem(false)]
 
