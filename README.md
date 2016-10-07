@@ -23,12 +23,12 @@ To successfully run this web service, you'll need to have IIS installed on a mem
 
 ### Add an Application Pool in IIS
 1. Open IIS management console, right click on <b>Application Pools</b> and select Add Application Pool.
-2. Enter ConfigMgrWebService as name, select the .NET CLR version .NET CLR Version v4.0.30319 and click OK.
-3. Select the new ConfigMgrWebService application pool and select Advanced Settings.
-4. In the Process Model section, specify the service account that will have access to ConfigMgr in the Identity field and click OK.
+2. Enter <b>ConfigMgrWebService</b> as name, select the .NET CLR version <b>.NET CLR Version v4.0.30319</b> and click OK.
+3. Select the new <b>ConfigMgrWebService</b> application pool and select <b>Advanced Settings</b>.
+4. In the <b>Process Model</b> section, specify the service account that will have access to ConfigMgr in the <b>Identity</b> field and click OK.
 
 ### Add an Application to Default Web Site
-1. Open IIS management console, expand Sites, right click on Default Web Site and select Add Application.
-2. As for Alias, enter ConfigMgrWebService.
-3. Select ConfigMgrWebService Application Pool created earlier.
-4. Set the physical path to C:\inetpub\ConfigMgrWebService and click OK.
+1. Open IIS management console, expand <b>Sites</b>, right click on <b>Default Web Site</b> and select <b>Add Application</b>.
+2. As for <b>Alias</b>, enter <b>ConfigMgrWebService</b>.
+3. Select <b>ConfigMgrWebService</b> as application pool.
+4. Set the physical path to <b>C:\inetpub\ConfigMgrWebService</b> and click OK.
