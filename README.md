@@ -52,4 +52,11 @@ To successfully run this web service, you'll need to have IIS installed on a mem
 ## Documentation
 
 ### Application Settings
-When calling the web service methods, you'll need to pass along a secret key that matches what's specified for the SecretKey application setting in web.config as a parameter. Without this parameter, the method will be invoked properly. This is a somewhat reasonable security mechanism (at least it's something) that prevents unathorized users to invoke the methods and retrieve data from your ConfigMgr environment. It's recommended that you generate a GUID and enter that as the 
+When calling the web service methods, you'll need to pass along a secret key that matches what's specified for the SecretKey application setting in web.config as a parameter. Without this parameter, the method will be invoked properly. This is a somewhat reasonable security mechanism (at least it's something) that prevents unathorized users to invoke the methods and retrieve data from your ConfigMgr environment. It's recommended that you generate a GUID and enter that as the SecretKey.
+
+### Available Methods
+
+#### Get Primary User by Device
+This method returns every primary user that's defined for a specified device.
+##### Parameters
+deviceName (string), secretKey (string)
