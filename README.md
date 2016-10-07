@@ -22,7 +22,7 @@ To successfully run this web service, you'll need to have IIS installed on a mem
 6. Locate <b>AdminUI.WqlQueryEngine.dll</b> and <b>Microsoft.ConfigurationManagement.ManagementProvider.dll</b> in the ConfigMgr console installation location and copy them to <b>C:\inetpub\ConfigMgrWebService\bin</b>.
 
 ### Add an Application Pool in IIS
-1. Open IIS management console, right click on Application Pools and select Add Application Pool.
+1. Open IIS management console, right click on <b>Application Pools</b> and select Add Application Pool.
 2. Enter ConfigMgrWebService as name, select the .NET CLR version .NET CLR Version v4.0.30319 and click OK.
 3. Select the new ConfigMgrWebService application pool and select Advanced Settings.
 4. In the Process Model section, specify the service account that will have access to ConfigMgr in the Identity field and click OK.
