@@ -9,6 +9,17 @@ This web service was designed to extend the functionality of Operating System De
 - Get Deployed Applications by Device
 - Get Hidden Task Sequence Deployments
 
+## Supported Configurations
+This web service has been built to suppoprt the following versions of System Center Configuration Manager:
+
+- Configuration Manager 2012 SP1
+- Configuration Manager 2012 SP2
+- Configuration Manager 2012 R2
+- Configuration Manager 2012 R2 SP1
+- Configuration Manager Current Branch (1511, 1602 and 1606)
+
+Make sure that .NET Framework 4.5.2 is available on the member server you intend to host this web service on.
+
 ## Installation instructions
 
 To successfully run this web service, you'll need to have IIS installed on a member server with ASP.NET enabled. Easiest way to get going is to install the ConfigMgrWebService on the same server as where your Management Point role is hosted. You'll also need to have a service account for the application pool in IIS. It's recommended that you add the service account in ConfigMgr with Full Administrator privileges.
