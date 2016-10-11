@@ -10,7 +10,7 @@ This web service was designed to extend the functionality of Operating System De
 - Get Hidden Task Sequence Deployments
 
 ## Supported Configurations
-This web service has been built to suppoprt the following versions of System Center Configuration Manager:
+This web service has been built to support the following versions of System Center Configuration Manager:
 
 - Configuration Manager 2012 SP1
 - Configuration Manager 2012 SP2
