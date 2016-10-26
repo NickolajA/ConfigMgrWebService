@@ -8,6 +8,7 @@ This web service was designed to extend the functionality of Operating System De
 - Get Deployed Applications by User
 - Get Deployed Applications by Device
 - Get Hidden Task Sequence Deployments
+- Get Discovered Users
 
 ## Supported Configurations
 This web service has been built to support the following versions of System Center Configuration Manager:
@@ -85,3 +86,8 @@ secretKey (string)
 This method returns the source version of a specified Boot Image.
 #### Parameters
 packageId (string), secretKey (string)
+
+#### GetDiscoveredUsers
+This method returns all discovered users.
+#### Parameters
+secretKey (string)
