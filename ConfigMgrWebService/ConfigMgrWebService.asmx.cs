@@ -79,7 +79,7 @@ namespace ConfigMgrWebService
                     foreach (var deviceRelation in managementObjectSearcher.Get())
                     {
                         //' Return device name
-                        string deviceName = (string) deviceRelation.GetPropertyValue("Device"); //' <--- this property needs to be verified
+                        string deviceName = (string) deviceRelation.GetPropertyValue("ResourceName");
                         relations.Add(deviceName);
                     }
                 //' Return empty
