@@ -12,7 +12,7 @@ using Microsoft.ConfigurationManagement.ManagementProvider.WqlQueryEngine;
 
 namespace ConfigMgrWebService
 {
-    [WebService(Name = "ConfigMgr Web Service 1.0.0", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen", Namespace = "http://www.scconfigmgr.com")]
+    [WebService(Name = "ConfigMgr Web Service 1.1.0", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen", Namespace = "http://www.scconfigmgr.com")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
     [System.ComponentModel.ToolboxItem(false)]
 
@@ -304,6 +304,54 @@ namespace ConfigMgrWebService
                     return "Unhandled exception occured";
                 }
             }
+        }
+
+        [WebMethod(Description = "Get all discovered users")]
+        public List<user> GetDiscoveredUsers(string secret)
+        {
+            //' Construct users list
+            var userList = new List<user>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                smsProvider smsProvider = new smsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Query for all discovered users
+                string query = "SELECT * FROM SMS_R_User";
+                IResultObject queryResults = connection.QueryProcessor.ExecuteQuery(query);
+
+                if (queryResults != null)
+                    foreach (IResultObject queryResult in queryResults)
+                    {
+                        //' Collect property values from instance
+                        string fullUserName = queryResult["FullUserName"].StringValue;
+                        string uniqueUserName = queryResult["UniqueUserName"].StringValue;
+                        string userPrincipalName = queryResult["UserPrincipalName"].StringValue;
+                        string userName = queryResult["UserName"].StringValue;
+                        string resourceId = queryResult["ResourceId"].StringValue;
+                        string windowsNTDomain = queryResult["WindowsNTDomain"].StringValue;
+                        string fullDomainName = queryResult["FullDomainName"].StringValue;
+
+                        //' Construct new user object
+                        user user = new user();
+                        user.fullUserName = fullUserName;
+                        user.uniqueUserName = uniqueUserName;
+                        user.userPrincipalName = userPrincipalName;
+                        user.userName = userName;
+                        user.resourceId = resourceId;
+                        user.windowsNTDomain = windowsNTDomain;
+                        user.fullDomainName = fullDomainName;
+
+                        //' Add user object to user list
+                        userList.Add(user);
+                    }
+            }
+
+            //' Return list of users
+            return userList;
         }
     }
 }

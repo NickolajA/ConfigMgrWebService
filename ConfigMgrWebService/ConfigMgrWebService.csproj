@@ -87,6 +87,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Application.cs" />
+    <Compile Include="user.cs" />
     <Compile Include="taskSequence.cs" />
     <Compile Include="smsProvider.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
