@@ -17,7 +17,7 @@ This web service has been built to support the following versions of System Cent
 - Configuration Manager 2012 SP2
 - Configuration Manager 2012 R2
 - Configuration Manager 2012 R2 SP1
-- Configuration Manager Current Branch (1511, 1602 and 1606)
+- Configuration Manager Current Branch (all currently supported versions released by Microsoft)
 
 Make sure that .NET Framework 4.5.2 is available on the member server you intend to host this web service on.
 
@@ -58,36 +58,121 @@ When calling the web service methods, you'll need to pass along a secret key tha
 ### Available Methods
 
 #### GetPrimaryUserByDevice
-This method returns all primary user associated for a specified device.
+This method returns all primary user associated for a specified device in Configuration Manager
 ##### Parameters
 deviceName (string), secretKey (string)
 
 #### GetPrimaryDeviceByUser
-This methods returns all primary devices associated with a specified user.
+This methods returns all primary devices associated with a specified user in Configuration Manager
 ##### Parameters
 userName (string), secretKey (string)
 
 #### GetDeployedApplicationsByUser
-This methods returns a list of all applications deployed targeting a specified user.
+This methods returns a list of all applications deployed targeting a specified user in Configuration Manager
 ##### Parameters
 userName (string), secretKey (string)
 
 #### GetDeployedApplicationsByDevice
-This methods returns a list of all applications deployed targeting a specified device.
+This methods returns a list of all applications deployed targeting a specified device in Configuration Manager
 ##### Parameters
 deviceName (string), secretKey (string)
 
 #### GetHiddenTaskSequenceDeployments
-This method returns a list of all task sequences deployed (available and required) as hidden.
+This method returns a list of all task sequences deployed (available and required) as hidden in Configuration Manager
 ##### Parameters
 secretKey (string)
 
 #### GetBootImageSourceVersion
-This method returns the source version of a specified Boot Image.
+This method returns the source version of a specified Boot Image from Configuration Manager
 #### Parameters
 packageId (string), secretKey (string)
 
 #### GetDiscoveredUsers
-This method returns all discovered users.
+This method returns all discovered users from Configuration Manager
 #### Parameters
 secretKey (string)
+
+#### GetCMUniqueUserName
+This method gets the UniqueUserName property for a specific user in Configuration Manager
+#### Parameters
+userName (string), secretKey (string) 
+
+#### ImportCMComputerByMacAddress
+This method imports a computer by the specified MAC address into Configuration Manager
+#### Parameters
+computerName (string), macAddress (string), secretKey (string)
+
+#### ImportCMComputerByUUID
+This method imports a computer by the specified UUID (SMBIOS GUID) into Configuration Manager
+#### Parameters
+computerName (string), uuid (string), secretKey (string)
+
+#### AddCMComputerToCollection
+This method adds a direct memberships rule for a specific computer to a collection in Configuration Manager
+#### Parameters
+resourceName (string), collectionName (string), secretKey (string)
+
+#### GetCMDeviceCollections
+This method retrieves a list (supports filtering) of device collection in Configuration Manager
+#### Parameters
+secretKey (string), filter (string, optional)
+
+#### UpdateCMCollectionMembership
+This method updates the membership of a collection by it's CollectionID property in Configuration Manager
+#### Parameters
+secretKey (string), collectionId (string)
+
+#### GetMDTRoles
+This method retrieves all roles in the MDT database
+#### Parameters
+server (string), database (string), instance (string), secretKey (string)
+
+#### GetMDTComputerByAssetTag
+This method retrieves a computer in the MDT database by specified asset tag
+#### Parameters
+secretKey (string), assetTag (string)
+
+#### GetMDTComputerByMacAddress
+This method retrieves a computer in the MDT database by specified MAC address
+#### Parameters
+secretKey (string), macAddress (string)
+
+#### GetMDTComputerBySerialNumber
+This method retrieves a computer in the MDT database by specified serial number
+#### Parameters
+secretKey (string), serialNumber (string)
+
+#### GetMDTComputerByUUID
+This method retrieves a computer in the MDT database by specified uuid (SMBIOS GUID)
+#### Parameters
+secretKey (string), uuid (string)
+
+#### GetMDTComputerRoleMembership
+This method retrieves a list of roles associated with a computer by it's ID in the MDT database
+#### Parameters
+id (string), secretKey (string)
+
+#### AddMDTRoleMemberByAssetTag
+This method adds a computer identified by an asset tag to a specific role in the MDT database. Set the parameter value for createComputer parameter to True if you also want the computer to be created, else set the value to False and include the identity parameter with the ID of the computer object to only the association is set.
+#### Parameters
+roleName (string), computerName (string), assetTag (string), secretKey (string), createComputer (bool), identity (string, optional)
+
+#### AddMDTRoleMemberBySerialNumber
+This method adds a computer identified by a serial number to a specific role in the MDT database. Set the parameter value for createComputer parameter to True if you also want the computer to be created, else set the value to False and include the identity parameter with the ID of the computer object to only the association is set.
+#### Parameters
+roleName (string), computerName (string), serialNumber (string), secretKey (string), createComputer (bool), identity (string, optional)
+
+#### AddMDTRoleMemberByMacAddress
+This method adds a computer identified by a MAC address to a specific role in the MDT database. Set the parameter value for createComputer parameter to True if you also want the computer to be created, else set the value to False and include the identity parameter with the ID of the computer object to only the association is set.
+#### Parameters
+roleName (string), computerName (string), macAddress (string), secretKey (string), createComputer (bool), identity (string, optional)
+
+#### AddMDTRoleMemberByUUID
+This method adds a computer identified by an UUID (SMBIOS GUID) to a specific role in the MDT database. Set the parameter value for createComputer parameter to True if you also want the computer to be created, else set the value to False and include the identity parameter with the ID of the computer object to only the association is set.
+#### Parameters
+roleName (string), computerName (string), uuid (string), secretKey (string), createComputer (bool), identity (string, optional)
+
+#### AddMDTRoleMember
+This method adds a computer identified by a single or multiple values, e.g. serial number and MAC address.
+#### Parameters
+computerName (string), role (string), secretKey (string), assetTag (string, optional), serialNumber (string, optional), macAddress (string, optional), uuid (string, optional), description (string, optional)
