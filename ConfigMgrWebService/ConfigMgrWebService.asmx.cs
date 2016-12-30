@@ -951,7 +951,7 @@ namespace ConfigMgrWebService
             {
                 //' Create computer identity in MDT database
                 string computerIdentity = AddMDTComputerIdentity(dictionary);
-                //'if (computerIdentity != null || computerIdentity != string.Empty)
+
                 if (!String.IsNullOrEmpty(computerIdentity))
                 {
                     //' Create association between computer and identity
