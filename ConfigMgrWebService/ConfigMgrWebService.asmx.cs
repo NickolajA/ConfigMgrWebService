@@ -601,6 +601,45 @@ namespace ConfigMgrWebService
             }
         }
 
+        [WebMethod(Description = "Get Driver Package data by computer model")]
+        public List<driverPackage> GetCMDriverPackageByModel(string secret, string model)
+        {
+            //' Construct list for driver package ids
+            List<driverPackage> pkgList = new List<driverPackage>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                smsProvider smsProvider = new smsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get driver packages
+                string query = String.Format("SELECT * FROM SMS_DriverPackage WHERE Name like '%{0}%' AND PackageType = 3", model);
+                IResultObject driverPackages = connection.QueryProcessor.ExecuteQuery(query);
+
+                if (driverPackages != null)
+                {
+                    foreach (IResultObject driverPackage in driverPackages)
+                    {
+                        //' Define objects for properties
+                        string packageName = driverPackage["Name"].StringValue;
+                        string packageId = driverPackage["PackageID"].StringValue;
+
+                        //' Add new driver package object to list
+                        driverPackage drvPkg = new driverPackage { PackageName = packageName, PackageID = packageId };
+                        pkgList.Add(drvPkg);
+                    }
+                }
+
+                return pkgList;
+            }
+            else
+            {
+                return pkgList;
+            }
+        }
+
         [WebMethod(Description = "Get MDT roles from database (Application Pool identity needs access permissions to the specified MDT database)")]
         public List<string> GetMDTRoles(string server, string database, string instance, string secret)
         {
@@ -951,7 +990,6 @@ namespace ConfigMgrWebService
             {
                 //' Create computer identity in MDT database
                 string computerIdentity = AddMDTComputerIdentity(dictionary);
-
                 if (!String.IsNullOrEmpty(computerIdentity))
                 {
                     //' Create association between computer and identity
