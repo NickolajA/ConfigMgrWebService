@@ -601,7 +601,7 @@ namespace ConfigMgrWebService
             }
         }
 
-        [WebMethod(Description = "Get Driver Package data by computer model")]
+        [WebMethod(Description = "Get Driver Package information by computer model")]
         public List<driverPackage> GetCMDriverPackageByModel(string secret, string model)
         {
             //' Construct list for driver package ids
