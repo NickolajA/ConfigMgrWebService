@@ -643,7 +643,7 @@ namespace ConfigMgrWebService
         [WebMethod(Description = "Get a filtered list of packages")]
         public List<package> GetCMPackage(string secret, string filter)
         {
-            //' Construct list for driver package ids
+            //' Construct list for package ids
             List<package> pkgList = new List<package>();
 
             //' Validate secret key
@@ -653,7 +653,7 @@ namespace ConfigMgrWebService
                 smsProvider smsProvider = new smsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get driver packages
+                //' Get packages
                 string query = String.Format("SELECT * FROM SMS_Package WHERE Name like '%{0}%'", filter);
                 IResultObject packages = connection.QueryProcessor.ExecuteQuery(query);
 
@@ -665,7 +665,7 @@ namespace ConfigMgrWebService
                         string packageName = package["Name"].StringValue;
                         string packageId = package["PackageID"].StringValue;
 
-                        //' Add new driver package object to list
+                        //' Add new package object to list
                         package pkg = new package { PackageName = packageName, PackageID = packageId };
                         pkgList.Add(pkg);
                     }
