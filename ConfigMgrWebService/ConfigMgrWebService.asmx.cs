@@ -640,6 +640,45 @@ namespace ConfigMgrWebService
             }
         }
 
+        [WebMethod(Description = "Get a filtered list of packages")]
+        public List<package> GetCMPackage(string secret, string filter)
+        {
+            //' Construct list for driver package ids
+            List<package> pkgList = new List<package>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                smsProvider smsProvider = new smsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get driver packages
+                string query = String.Format("SELECT * FROM SMS_Package WHERE Name like '%{0}%'", filter);
+                IResultObject packages = connection.QueryProcessor.ExecuteQuery(query);
+
+                if (packages != null)
+                {
+                    foreach (IResultObject package in packages)
+                    {
+                        //' Define objects for properties
+                        string packageName = package["Name"].StringValue;
+                        string packageId = package["PackageID"].StringValue;
+
+                        //' Add new driver package object to list
+                        package pkg = new package { PackageName = packageName, PackageID = packageId };
+                        pkgList.Add(pkg);
+                    }
+                }
+
+                return pkgList;
+            }
+            else
+            {
+                return pkgList;
+            }
+        }
+
         [WebMethod(Description = "Get MDT roles from database (Application Pool identity needs access permissions to the specified MDT database)")]
         public List<string> GetMDTRoles(string server, string database, string instance, string secret)
         {
