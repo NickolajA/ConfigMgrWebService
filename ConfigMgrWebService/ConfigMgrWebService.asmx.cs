@@ -239,7 +239,7 @@ namespace ConfigMgrWebService
             }
         }
 
-        [WebMethod(Description = "Get hidden task sequence deployments")]
+        [WebMethod(Description = "Get all hidden task sequence deployments")]
         public List<taskSequence> GetCMHiddenTaskSequenceDeployments(string secret)
         {
             //' Construct hidden task sequences list
@@ -279,6 +279,176 @@ namespace ConfigMgrWebService
                     if ((advertFlags & 0x20000000) != 0)
                         hiddenTaskSequences.Add(returnObject);
                 }
+                return hiddenTaskSequences;
+            }
+        }
+
+        [WebMethod(Description = "Get resource id for device by UUID (SMSBIOSGUID)")]
+        public string GetCMDeviceResourceIDByUUID(string secret, string uuid)
+        {
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                smsProvider smsProvider = new smsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Query for device resource
+                string query = String.Format("SELECT * FROM SMS_R_System WHERE SMBIOSGUID like '{0}'", uuid);
+                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                string resourceId = string.Empty;
+
+                if (result != null)
+                {
+                    foreach (IResultObject device in result)
+                    {
+                        int id = device["ResourceId"].IntegerValue;
+                        resourceId = id.ToString();
+                    }
+                }
+
+                return resourceId;
+            }
+            else
+            {
+                return string.Empty;
+            }
+        }
+
+        [WebMethod(Description = "Get resource id for device by MAC Address")]
+        public string GetCMDeviceResourceIDByMACAddress(string secret, string macAddress)
+        {
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                smsProvider smsProvider = new smsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Query for device resource
+                string query = String.Format("SELECT * FROM SMS_R_System WHERE MacAddresses like '{0}'", macAddress);
+                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                string resourceId = string.Empty;
+
+                if (result != null)
+                {
+                    foreach (IResultObject device in result)
+                    {
+                        int id = device["ResourceId"].IntegerValue;
+                        resourceId = id.ToString();
+                    }
+                }
+
+                return resourceId;
+            }
+            else
+            {
+                return string.Empty;
+            }
+        }
+
+        [WebMethod(Description = "Get the name of a specific device by UUID (SMBIOS GUID)")]
+        public string GetCMDeviceNameByUUID(string secret, string uuid)
+        {
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                smsProvider smsProvider = new smsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Query for device name
+                string query = String.Format("SELECT * FROM SMS_R_System WHERE SMBIOSGUID like '{0}'", uuid);
+                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                string deviceName = string.Empty;
+
+                if (result != null)
+                {
+                    foreach (IResultObject device in result)
+                    {
+                        string name = device["Name"].StringValue;
+                        deviceName = name;
+                    }
+                }
+
+                return deviceName;
+            }
+            else
+            {
+                return string.Empty;
+            }
+        }
+
+        [WebMethod(Description = "Get hidden task sequence deployments for a specific resource id")]
+        public List<taskSequence> GetCMHiddenTaskSequenceDeploymentsByResourceId(string secret, string resourceId)
+        {
+            //' Construct hidden task sequences list
+            List<taskSequence> hiddenTaskSequences = new List<taskSequence>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                smsProvider smsProvider = new smsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Query for task sequence deployments
+                string deploymentQuery = "SELECT * FROM SMS_AdvertisementInfo WHERE PackageType = 4";
+                IResultObject tsDeployments = connection.QueryProcessor.ExecuteQuery(deploymentQuery);
+
+                if (tsDeployments != null)
+                {
+                    //' Get device collection ids for resource id
+                    string collectionQuery = String.Format("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceId like '{0}'", resourceId);
+                    IResultObject collections = connection.QueryProcessor.ExecuteQuery(collectionQuery);
+
+                    //' Construct string array for collection ids
+                    ArrayList collIdList = new ArrayList();
+
+                    if (collections != null)
+                    {
+                        //' Process collection memberships for device
+                        foreach (IResultObject collection in collections)
+                        {
+                            string collectionId = collection["CollectionID"].StringValue;
+                            collIdList.Add(collectionId);
+                        }
+
+                        //' Process task sequence deployments to see if any is deployed to a collection that the device is a member of
+                        if (collIdList.Count >= 1)
+                        {
+                            foreach (IResultObject tsDeployment in tsDeployments)
+                            {
+                                string deployCollId = tsDeployment["CollectionID"].StringValue;
+
+                                if (collIdList.Contains(deployCollId))
+                                {
+                                    //' Collect property values from instance
+                                    string packageName = tsDeployment["PackageName"].StringValue;
+                                    string advertId = tsDeployment["AdvertisementId"].StringValue;
+                                    int advertFlags = tsDeployment["AdvertFlags"].IntegerValue;
+
+                                    //' Construct taskSequence object
+                                    taskSequence ts = new taskSequence { AdvertFlags = advertFlags, AdvertisementId = advertId, PackageName = packageName };
+
+                                    //' Add object to list if hidden deployment bit exists
+                                    if ((advertFlags & 0x20000000) != 0)
+                                    {
+                                        hiddenTaskSequences.Add(ts);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return hiddenTaskSequences;
+            }
+            else
+            {
                 return hiddenTaskSequences;
             }
         }
@@ -404,7 +574,7 @@ namespace ConfigMgrWebService
                         //' Collect property values from instance
                         string uName = queryResult["UserName"].StringValue;
                         string uniqueUserName = queryResult["UniqueUserName"].StringValue;
-                        if (uName == userName)
+                        if (uName.ToLower() == userName.ToLower())
                             return uniqueUserName;
                     }
             }
@@ -580,7 +750,7 @@ namespace ConfigMgrWebService
 
                 if (collResult != null)
                 {
-                    //' check for count more than 1
+                    //' Refresh memberships
                     foreach (WqlResultObject collection in collResult)
                     {
                         Dictionary<string, object> refreshParams = new Dictionary<string, object>();
@@ -745,6 +915,7 @@ namespace ConfigMgrWebService
             }
             else
             {
+                //' Return null when secret key is not passed correctly
                 return null;
             }
         }
@@ -771,7 +942,8 @@ namespace ConfigMgrWebService
             }
             else
             {
-                return "EMPTY";
+                //' Return null when secret key is not passed correctly
+                return null;
             }
         }
 
@@ -797,6 +969,7 @@ namespace ConfigMgrWebService
             }
             else
             {
+                //' Return null when secret key is not passed correctly
                 return null;
             }
         }
@@ -823,6 +996,74 @@ namespace ConfigMgrWebService
             }
             else
             {
+                //' Return null when secret key is not passed correctly
+                return null;
+            }
+        }
+
+        [WebMethod(Description = "Get MDT roles with detailed information for a specific computer")]
+        public List<MDTRole> GetMDTDetailedComputerRoleMembership(string secret, string identity)
+        {
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                try
+                {
+                    //' Get connection string
+                    SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+
+                    //' Connect to SQL server instance
+                    SqlConnection connection = new SqlConnection();
+                    connection.ConnectionString = connectionString.ConnectionString;
+                    connection.Open();
+
+                    //' Construct SQL statement
+                    SqlCommand command = connection.CreateCommand();
+                    StringBuilder sqlString = new StringBuilder();
+                    sqlString.Append(String.Format("SELECT Roles.Role, RoleIdentity.ID FROM Settings_Roles AS Roles INNER JOIN RoleIdentity ON Roles.Role = RoleIdentity.Role WHERE Roles.ID = @ID AND Roles.Type = 'C'"));
+
+                    command.Parameters.Add("@ID", SqlDbType.NVarChar).Value = identity;
+                    command.CommandText = sqlString.ToString();
+
+                    //' Construct List to hold all roles
+                    List<MDTRole> roleList = new List<MDTRole>();
+
+                    //' Invoke SQL command to retrieve roles
+                    try
+                    {
+                        SqlDataReader reader = command.ExecuteReader();
+                        if (reader.HasRows == true)
+                        {
+                            while (reader.Read())
+                            {
+                                MDTRole mdtRole = new MDTRole();
+                                mdtRole.RoleName = reader["Role"].ToString();
+                                mdtRole.RoleId = reader["ID"].ToString();
+                                roleList.Add(mdtRole);
+                            }
+                        }
+
+                        //' Cleanup and disconnect SQL connection
+                        command.Dispose();
+                        connection.Close();
+
+                        return roleList;
+                    }
+                    catch (System.Web.Services.Protocols.SoapException ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to get role memberships. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                        return null;
+                    }
+                }
+                catch (SqlException ex)
+                {
+                    WriteEventLog(String.Format("An error occured while connecting to SQL server hosting MDT database. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    return null;
+                }
+            }
+            else
+            {
+                //' Return null when secret key is not passed correctly
                 return null;
             }
         }
@@ -888,6 +1129,29 @@ namespace ConfigMgrWebService
             {
                 //' Return null when secret key is not passed correctly
                 return null;
+            }
+        }
+
+        [WebMethod(Description = "Get MDT computer name by computer identity")]
+        public string GetMDTComputerNameByIdentity(string secret, string identity)
+        {
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                string computerIdentity = GetMDTComputerName(identity);
+                if (!String.IsNullOrEmpty(computerIdentity))
+                {
+                    return computerIdentity;
+                }
+                else
+                {
+                    return string.Empty;
+                }
+            }
+            else
+            {
+                //' Return empty string when secret key is not passed correctly
+                return string.Empty;
             }
         }
 
@@ -1015,6 +1279,22 @@ namespace ConfigMgrWebService
 
                 bool result = BeginMDTRoleMember(dictionary, computerName, role);
                 return result;
+            }
+            else
+            {
+                //' Return false when secret key is not passed correctly
+                return false;
+            }
+        }
+
+        [WebMethod(Description = "Remove MDT computer from all associated roles")]
+        public bool RemoveMDTComputerFromRoles(string secret, string identity)
+        {
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                bool removeResult = RemoveMDTComputerRoles(identity);
+                return removeResult;
             }
             else
             {
@@ -1349,6 +1629,50 @@ namespace ConfigMgrWebService
             }
         }
 
+        private string GetMDTComputerName(string identity)
+        {
+            string computerIdentity = string.Empty;
+
+            try
+            {
+                //' Get connection string
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+
+                //' Connect to SQL server instance
+                SqlConnection connection = new SqlConnection();
+                connection.ConnectionString = connectionString.ConnectionString;
+                connection.Open();
+
+                //' Construct SQL statement
+                SqlCommand command = connection.CreateCommand();
+                StringBuilder sqlString = new StringBuilder();
+                sqlString.Append(String.Format("SELECT ID, OSDComputerName FROM Settings WHERE ID like @ID"));
+
+                command.Parameters.Add("@ID", SqlDbType.NVarChar).Value = identity;
+                command.CommandText = sqlString.ToString();
+
+                SqlDataReader reader = command.ExecuteReader();
+                if (reader.HasRows == true)
+                {
+                    while (reader.Read())
+                    {
+                        computerIdentity = reader["OSDComputerName"].ToString();
+                    }
+                }
+
+                //' Cleanup and disconnect SQL connection
+                command.Dispose();
+                connection.Close();
+
+                return computerIdentity;
+            }
+            catch (SqlException ex)
+            {
+                WriteEventLog(String.Format("An error occured while connecting to SQL server hosting MDT database. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                return computerIdentity;
+            }
+        }
+
         private string GetMDTComputerIdentity(SqlConnectionStringBuilder connectionString, string identityType, string identityValue)
         {
             try
@@ -1395,6 +1719,58 @@ namespace ConfigMgrWebService
             {
                 WriteEventLog(String.Format("An error occured while connecting to SQL server hosting MDT database. Error message: {0}", ex.Message), EventLogEntryType.Error);
                 return null;
+            }
+        }
+
+        private bool RemoveMDTComputerRoles(string identity)
+        {
+            try
+            {
+                //' Get connection string
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+
+                //' Connect to SQL server instance
+                SqlConnection connection = new SqlConnection();
+                connection.ConnectionString = connectionString.ConnectionString;
+                connection.Open();
+
+                //' Construct SQL statement
+                SqlCommand command = connection.CreateCommand();
+                StringBuilder sqlString = new StringBuilder();
+                sqlString.Append(String.Format("DELETE FROM Settings_Roles WHERE ID = @ID AND Type like 'C'"));
+
+                command.Parameters.Add("@ID", SqlDbType.NVarChar).Value = identity;
+                command.CommandText = sqlString.ToString();
+
+                //' Invoke SQL command for clearing all associated roles for computer identity
+                try
+                {
+                    int rowsAffected = command.ExecuteNonQuery();
+                    if (rowsAffected >= 1)
+                    {
+                        //' Cleanup and disconnect SQL connection
+                        command.Dispose();
+                        connection.Close();
+
+                        return true;
+                    }
+                }
+                catch (System.Web.Services.Protocols.SoapException ex)
+                {
+                    WriteEventLog(String.Format("An error occured when attempting to clear associated roles for computer. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    return false;
+                }
+
+                //' Cleanup and disconnect SQL connection
+                command.Dispose();
+                connection.Close();
+
+                return false;
+            }
+            catch (SqlException ex)
+            {
+                WriteEventLog(String.Format("An error occured while connecting to SQL server hosting MDT database. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                return false;
             }
         }
 
