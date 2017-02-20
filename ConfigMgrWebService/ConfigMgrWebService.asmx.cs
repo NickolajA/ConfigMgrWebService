@@ -850,7 +850,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Get MDT roles from database (Application Pool identity needs access permissions to the specified MDT database)")]
-        public List<string> GetMDTRoles(string server, string database, string instance, string secret)
+        public List<string> GetMDTRoles(string secret)
         {
             //' Construct list object
             List<string> roleList = new List<string>();
