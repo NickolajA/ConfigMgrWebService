@@ -15,7 +15,7 @@ using System.Data;
 
 namespace ConfigMgrWebService
 {
-    [WebService(Name = "ConfigMgr Web Service", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (v1.1.0)", Namespace = "http://www.scconfigmgr.com")]
+    [WebService(Name = "ConfigMgr Web Service", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (v1.2.0)", Namespace = "http://www.scconfigmgr.com")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
     [System.ComponentModel.ToolboxItem(false)]
 
@@ -834,9 +834,14 @@ namespace ConfigMgrWebService
                         //' Define objects for properties
                         string packageName = package["Name"].StringValue;
                         string packageId = package["PackageID"].StringValue;
+                        string packageVersion = package["Version"].StringValue;
 
                         //' Add new package object to list
-                        package pkg = new package { PackageName = packageName, PackageID = packageId };
+                        package pkg = new package {
+                            PackageName = packageName,
+                            PackageID = packageId,
+                            PackageVersion = packageVersion
+                        };
                         pkgList.Add(pkg);
                     }
                 }
@@ -846,6 +851,112 @@ namespace ConfigMgrWebService
             else
             {
                 return pkgList;
+            }
+        }
+
+        [WebMethod(Description = "Check for 'Unknown' device record by UUID (SMBIOS GUID)")]
+        public List<string> GetCMUnknownDeviceByUUID(string secret, string uuid)
+        {
+            //' Construct list for unknown device resource ids
+            List<string> resourceIds = new List<string>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                smsProvider smsProvider = new smsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get unknown device records
+                string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like 'Unknown' AND SMBIOSGUID like '{0}'", uuid);
+                IResultObject unknownRecords = connection.QueryProcessor.ExecuteQuery(query);
+
+                //' Remove all unknown device records matching uuid
+                if (unknownRecords != null)
+                {
+                    foreach (IResultObject record in unknownRecords)
+                    {
+                        string resourceId = record["ResourceID"].StringValue;
+                        resourceIds.Add(resourceId);
+                    }
+                }
+
+                return resourceIds;
+            }
+            else
+            {
+                return resourceIds;
+            }
+        }
+
+        [WebMethod(Description = "Delete 'Unknown' device record by UUID (SMBIOS GUID)")]
+        public int RemoveCMUnknownDeviceByUUID(string secret, string uuid)
+        {
+            //' Variable for amount of removed records
+            int records = 0;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                smsProvider smsProvider = new smsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get unknown device records
+                string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like 'Unknown' AND SMBIOSGUID like '{0}'", uuid);
+                IResultObject unknownRecord = connection.QueryProcessor.ExecuteQuery(query);
+
+                //' Remove all unknown device records matching uuid
+                if (unknownRecord != null)
+                {
+                    foreach (IResultObject record in unknownRecord)
+                    {
+                        record.Delete();
+                        records++;
+                    }
+                }
+
+                return records;
+            }
+            else
+            {
+                return records;
+            }
+        }
+
+        [WebMethod(Description = "Get deployed applications by collection ID")]
+        public List<string> GetCMApplicationDeploymentsByCollectionID(string secret, string collId)
+        {
+            //' Construct new list for application deployments
+            List<string> appDeployments = new List<string>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                smsProvider smsProvider = new smsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get application deployments by collection id
+                string query = String.Format("SELECT * FROM SMS_DeploymentInfo WHERE CollectionID like '{0}' AND DeploymentTypeID like '2'", collId);
+                IResultObject deployments = connection.QueryProcessor.ExecuteQuery(query);
+
+                //' 
+                if (deployments != null)
+                {
+                    foreach (IResultObject deployment in deployments)
+                    {
+                        string appName = deployment["TargetName"].StringValue;
+                        appDeployments.Add(appName);
+                    }
+                    appDeployments.Sort();
+                }
+
+                return appDeployments;
+            }
+            else
+            {
+                return appDeployments;
             }
         }
 
@@ -1161,8 +1272,11 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
+
                 Dictionary<string, string> dictionary = new Dictionary<string, string>();
                 dictionary.Add("AssetTag", assetTag);
+                dictionary.Add("Description", description);
 
                 if (createComputer == true)
                 {
@@ -1188,8 +1302,11 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
+
                 Dictionary<string, string> dictionary = new Dictionary<string, string>();
                 dictionary.Add("SerialNumber", serialNumber);
+                dictionary.Add("Description", description);
 
                 if (createComputer == true)
                 {
@@ -1216,8 +1333,11 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
+
                 Dictionary<string, string> dictionary = new Dictionary<string, string>();
                 dictionary.Add("MacAddress", macAddress);
+                dictionary.Add("Description", description);
 
                 if (createComputer == true)
                 {
@@ -1243,8 +1363,11 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
+
                 Dictionary<string, string> dictionary = new Dictionary<string, string>();
                 dictionary.Add("UUID", uuid);
+                dictionary.Add("Description", description);
 
                 if (createComputer == true)
                 {

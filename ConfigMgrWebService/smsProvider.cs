@@ -22,18 +22,17 @@ namespace ConfigMgrWebService
             catch (SmsException ex)
             {
                 Trace.WriteLine(DateTime.Now + ": Unhandled expection thrown by SMS Provider: " + ex.ToString());
-                throw ex;
             }
             catch (UnauthorizedAccessException ex)
             {
                 Trace.WriteLine(DateTime.Now + ": Unathorized access exception thrown: " + ex.ToString());
-                throw ex;
             }
             catch (Exception ex)
             {
                 Trace.WriteLine(DateTime.Now + ": Unhandled expection thrown: " + ex.ToString());
-                throw ex;
             }
+
+            return null;
         }
     }
 }
