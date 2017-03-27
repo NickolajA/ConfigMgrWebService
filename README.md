@@ -45,7 +45,7 @@ The list below shows an overview of the available methods:
 
 ### Active Directory
 
-N/A (Coming in version 1.2.0)
+N/A (Coming in version 1.3.0)
 
 ## Supported Configurations
 This web service has been built to support the following versions of System Center Configuration Manager:
