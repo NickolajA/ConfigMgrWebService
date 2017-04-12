@@ -9,6 +9,9 @@ namespace ConfigMgrWebService
     {
         public string PackageName { get; set; }
         public string PackageID { get; set; }
+        public string PackageManufacturer { get; set; }
+        public string PackageLanguage { get; set; }
         public string PackageVersion { get; set; }
+        public DateTime PackageCreated { get; set; }
     }
 }

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Web;
+using System.DirectoryServices;
 using System.Collections;
 using System.Diagnostics;
 using System.Web.Services;
@@ -15,7 +16,7 @@ using System.Data;
 
 namespace ConfigMgrWebService
 {
-    [WebService(Name = "ConfigMgr Web Service", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (v1.1.1)", Namespace = "http://www.scconfigmgr.com")]
+    [WebService(Name = "ConfigMgr Web Service", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (v1.2.0)", Namespace = "http://www.scconfigmgr.com")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
     [System.ComponentModel.ToolboxItem(false)]
 
@@ -28,6 +29,19 @@ namespace ConfigMgrWebService
         private string sqlServer = WebConfigurationManager.AppSettings["SQLServer"];
         private string sqlInstance = WebConfigurationManager.AppSettings["SQLInstance"];
         private string mdtDatabase = WebConfigurationManager.AppSettings["MDTDatabase"];
+
+        //' Enums
+        public enum ADObjectClass
+        {
+            Group,
+            Computer
+        }
+
+        public enum ADObjectType
+        {
+            distinguishedName,
+            objectGuid
+        }
 
         //' Initialize event logging
         private EventLog eventLog;
@@ -279,6 +293,7 @@ namespace ConfigMgrWebService
                     if ((advertFlags & 0x20000000) != 0)
                         hiddenTaskSequences.Add(returnObject);
                 }
+
                 return hiddenTaskSequences;
             }
         }
@@ -459,7 +474,7 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret != secretKey)
             {
-                return "A secret key was not specified or cannot be validated";
+                return string.Empty;
             }
             else
             {
@@ -485,8 +500,8 @@ namespace ConfigMgrWebService
                 }
                 catch (Exception ex)
                 {
-                    Trace.WriteLine(DateTime.Now + ": Unhandled exception occured: " + ex.ToString());
-                    return "Unhandled exception occured";
+                    WriteEventLog(String.Format("An error occured when attempting to retrieve boot image source version. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    return string.Empty;
                 }
             }
         }
@@ -543,8 +558,7 @@ namespace ConfigMgrWebService
                 }
                 catch (Exception ex)
                 {
-                    WriteEventLog("An error occured while constructing list of user instances", EventLogEntryType.Error);
-                    WriteEventLog(ex.Message, EventLogEntryType.Error);
+                    WriteEventLog(String.Format("An error occured while constructing list of user instances. Error message: {0}", ex.Message), EventLogEntryType.Error);
                     return userList;
                 }
             }
@@ -834,13 +848,19 @@ namespace ConfigMgrWebService
                         //' Define objects for properties
                         string packageName = package["Name"].StringValue;
                         string packageId = package["PackageID"].StringValue;
+                        string packageManufacturer = package["Manufacturer"].StringValue;
+                        string packageLanguage = package["Language"].StringValue;
                         string packageVersion = package["Version"].StringValue;
+                        DateTime packageCreated = package["SourceDate"].DateTimeValue;
 
                         //' Add new package object to list
                         package pkg = new package {
                             PackageName = packageName,
                             PackageID = packageId,
-                            PackageVersion = packageVersion
+                            PackageManufacturer = packageManufacturer,
+                            PackageLanguage = packageLanguage,
+                            PackageVersion = packageVersion,
+                            PackageCreated = packageCreated
                         };
                         pkgList.Add(pkg);
                     }
@@ -958,6 +978,157 @@ namespace ConfigMgrWebService
             {
                 return appDeployments;
             }
+        }
+
+        [WebMethod(Description = "Move a computer in Active Directory to a specific organizational unit")]
+        public bool SetADOrganizationalUnitForComputer(string secret, string organizationalUnitLocation, string computerName)
+        {
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Determine if ldap prefix needs to be appended
+                if (organizationalUnitLocation.StartsWith("LDAP://") == false)
+                {
+                    organizationalUnitLocation = String.Format("LDAP://{0}", organizationalUnitLocation);
+                }
+
+                //' Get AD object distinguished name
+                string currentDistinguishedName = GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName);
+
+                if (!String.IsNullOrEmpty(currentDistinguishedName))
+                {
+                    try
+                    {
+                        //' Move current object to new location
+                        DirectoryEntry currentObject = new DirectoryEntry(currentDistinguishedName);
+                        DirectoryEntry newLocation = new DirectoryEntry(organizationalUnitLocation);
+                        currentObject.MoveTo(newLocation, currentObject.Name);
+
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to move Active Directory object. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                        return false;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        [WebMethod(Description = "Add a computer in Active Directory to a specific group")]
+        public bool AddADComputerToGroup(string secret, string groupName, string computerName)
+        {
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get AD object distinguished name for computer and group
+                string computerDistinguishedName = (GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName)).Remove(0, 7);
+                string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
+
+                if (!String.IsNullOrEmpty(computerDistinguishedName) && !String.IsNullOrEmpty(groupDistinguishedName))
+                {
+                    try
+                    {
+                        //' Add computer to group and commit
+                        DirectoryEntry groupEntry = new DirectoryEntry(groupDistinguishedName);
+                        groupEntry.Properties["member"].Add(computerDistinguishedName);
+                        groupEntry.CommitChanges();
+
+                        //' Dispose object
+                        groupEntry.Dispose();
+
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to add a computer object in Active Directory to a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                        return false;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        [WebMethod(Description = "Remove a computer in Active Directory from a specific group")]
+        public bool RemoveADComputerFromGroup(string secret, string groupName, string computerName)
+        {
+            //' Set return value variable
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get AD object distinguished name for computer and group
+                string computerDistinguishedName = (GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName)).Remove(0,7);
+                string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
+
+                if (!String.IsNullOrEmpty(computerDistinguishedName) && !String.IsNullOrEmpty(groupDistinguishedName))
+                {
+                    try
+                    {
+                        //' Check if computer is member of group
+                        DirectoryEntry groupEntry = new DirectoryEntry(groupDistinguishedName);
+                        bool memberOf = groupEntry.Properties["member"].Contains(computerDistinguishedName);
+
+                        if (memberOf == true)
+                        {
+                            //' Remove computer from group and commit
+                            groupEntry.Properties["member"].Remove(computerDistinguishedName);
+                            groupEntry.CommitChanges();
+
+                            returnValue = true;
+                        }
+
+                        //' Dispose object
+                        groupEntry.Dispose();
+
+                        return returnValue;
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to remove a computer object in Active Directory from a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                        return returnValue;
+                    }
+                }
+            }
+
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Set the description field for a computer in Active Directory")]
+        public bool SetADComputerDescription(string secret, string computerName, string description)
+        {
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get AD object distinguished name for computer
+                string computerDistinguishedName = GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName);
+                
+                if (!String.IsNullOrEmpty(computerDistinguishedName))
+                {
+                    try
+                    {
+                        //' Set computer object description
+                        DirectoryEntry computerEntry = new DirectoryEntry(computerDistinguishedName);
+                        computerEntry.Properties["description"].Value = description;
+                        computerEntry.CommitChanges();
+
+                        //' Dispose object
+                        computerEntry.Dispose();
+
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to remove a computer object in Active Directory from a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    }
+                }
+            }
+
+            return false;
         }
 
         [WebMethod(Description = "Get MDT roles from database (Application Pool identity needs access permissions to the specified MDT database)")]
@@ -1160,7 +1331,7 @@ namespace ConfigMgrWebService
 
                         return roleList;
                     }
-                    catch (System.Web.Services.Protocols.SoapException ex)
+                    catch (Exception ex)
                     {
                         WriteEventLog(String.Format("An error occured when attempting to get role memberships. Error message: {0}", ex.Message), EventLogEntryType.Error);
                         return null;
@@ -1224,7 +1395,7 @@ namespace ConfigMgrWebService
 
                         return roleList;
                     }
-                    catch (System.Web.Services.Protocols.SoapException ex)
+                    catch (Exception ex)
                     {
                         WriteEventLog(String.Format("An error occured when attempting to get role memberships. Error message: {0}", ex.Message), EventLogEntryType.Error);
                         return null;
@@ -1575,7 +1746,7 @@ namespace ConfigMgrWebService
 
                 return identity;
             }
-            catch (System.Web.Services.Protocols.SoapException ex)
+            catch (Exception ex)
             {
                 WriteEventLog(String.Format("An error occured when attempting to create computer identity. Error message: {0}", ex.Message), EventLogEntryType.Error);
                 return string.Empty;
@@ -1617,7 +1788,7 @@ namespace ConfigMgrWebService
                     return true;
                 }
             }
-            catch (System.Web.Services.Protocols.SoapException ex)
+            catch (Exception ex)
             {
                 WriteEventLog(String.Format("An error occured when attempting to create computer setting. Error message: {0}", ex.Message), EventLogEntryType.Error);
                 return false;
@@ -1676,7 +1847,7 @@ namespace ConfigMgrWebService
                     return true;
                 }
             }
-            catch (System.Web.Services.Protocols.SoapException ex)
+            catch (Exception ex)
             {
                 WriteEventLog(String.Format("An error occured when attempting to association computer with role. Error message: {0}", ex.Message), EventLogEntryType.Error);
                 return false;
@@ -1739,7 +1910,7 @@ namespace ConfigMgrWebService
                         return 0;
                     }
                 }
-                catch (System.Web.Services.Protocols.SoapException ex)
+                catch (Exception ex)
                 {
                     WriteEventLog(String.Format("An error occured when attempting to get sequence numbers from role settings. Error message: {0}", ex.Message), EventLogEntryType.Error);
                     return 0;
@@ -1832,7 +2003,7 @@ namespace ConfigMgrWebService
 
                     return identity;
                 }
-                catch (System.Web.Services.Protocols.SoapException ex)
+                catch (Exception ex)
                 {
                     WriteEventLog(String.Format("An error occured when attempting to get computer identity. Error message: {0}", ex.Message), EventLogEntryType.Error);
                     return null;
@@ -1878,7 +2049,7 @@ namespace ConfigMgrWebService
                         return true;
                     }
                 }
-                catch (System.Web.Services.Protocols.SoapException ex)
+                catch (Exception ex)
                 {
                     WriteEventLog(String.Format("An error occured when attempting to clear associated roles for computer. Error message: {0}", ex.Message), EventLogEntryType.Error);
                     return false;
@@ -1979,6 +2150,76 @@ namespace ConfigMgrWebService
                 eventLog.Log = "ConfigMgr Web Service Activity";
                 eventLog.WriteEntry(logEntry, entryType, 1000);
             }
+        }
+
+        private string GetADDefaultNamingContext()
+        {
+            string defaultNamingContext;
+            using (DirectoryEntry rootDSE = new DirectoryEntry("LDAP://RootDSE"))
+            {
+                defaultNamingContext = rootDSE.Properties["defaultNamingContext"].Value.ToString();
+            }
+
+            return defaultNamingContext;
+        }
+
+        private string GetADObject(string name, ADObjectClass objectClass, ADObjectType objectType)
+        {
+            //' Set empty value for return object and search result
+            string returnValue = string.Empty;
+            SearchResult searchResult = null;
+
+            //' Get default naming context of current domain
+            string defaultNamingContext = GetADDefaultNamingContext();
+            string currentDomain = String.Format("LDAP://{0}", defaultNamingContext);
+
+            //' Construct directory entry for directory searcher
+            DirectoryEntry domain = new DirectoryEntry(currentDomain);
+            DirectorySearcher directorySearcher = new DirectorySearcher(domain);
+            directorySearcher.PropertiesToLoad.Add("distinguishedName");
+
+            switch (objectClass)
+            {
+                case ADObjectClass.Computer:
+                    directorySearcher.Filter = String.Format("(&(objectClass=computer)((sAMAccountName={0}$)))", name);
+                    break;
+                case ADObjectClass.Group:
+                    directorySearcher.Filter = String.Format("(&(objectClass=group)((sAMAccountName={0})))", name);
+                    break;
+            }
+
+            //' Invoke directory searcher
+            try
+            {
+                searchResult = directorySearcher.FindOne();
+            }
+            catch (Exception ex)
+            {
+                WriteEventLog(String.Format("An error occured when attempting to locate Active Directory object. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                return returnValue;
+            }
+
+            //' Return selected object type value
+            if (searchResult != null)
+            {
+                DirectoryEntry directoryObject = searchResult.GetDirectoryEntry();
+
+                if (objectType.Equals(ADObjectType.objectGuid))
+                {
+                    returnValue = directoryObject.Guid.ToString();
+                }
+
+                if (objectType.Equals(ADObjectType.distinguishedName))
+                {
+                    returnValue = String.Format("LDAP://{0}", directoryObject.Properties["distinguishedName"].Value);
+                }
+            }
+
+            //' Dispose objects
+            directorySearcher.Dispose();
+            domain.Dispose();
+
+            return returnValue;
         }
     }
 }
