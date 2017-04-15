@@ -22,8 +22,10 @@ The list below shows an overview of the available methods:
 - GetCMPrimaryDeviceByUser 
 - GetCMPrimaryUserByDevice 
 - GetCMUniqueUserName 
+- GetCMUnknownDeviceByUUID 
 - ImportCMComputerByMacAddress 
 - ImportCMComputerByUUID 
+- RemoveCMUnknownDeviceByUUID 
 - UpdateCMCollectionMembership 
 
 ### Microsoft Deployment Toolkit
@@ -45,7 +47,10 @@ The list below shows an overview of the available methods:
 
 ### Active Directory
 
-N/A (Coming in version 1.3.0)
+- AddADComputerToGroup
+- SetADComputerDescription 
+- SetADOrganizationalUnitForComputer 
+- RemoveADComputerFromGroup 
 
 ## Supported Configurations
 This web service has been built to support the following versions of System Center Configuration Manager:
