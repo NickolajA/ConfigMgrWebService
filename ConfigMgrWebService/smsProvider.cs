@@ -8,28 +8,30 @@ using Microsoft.ConfigurationManagement.ManagementProvider.WqlQueryEngine;
 
 namespace ConfigMgrWebService
 {
-    class smsProvider
+    class SmsProvider
     {
         public WqlConnectionManager Connect(string serverName)
         {
             try
             {
+                //' Connect to SMS Provider
                 SmsNamedValuesDictionary namedValues = new SmsNamedValuesDictionary();
                 WqlConnectionManager connection = new WqlConnectionManager(namedValues);
                 connection.Connect(serverName);
+
                 return connection;
             }
             catch (SmsException ex)
             {
-                Trace.WriteLine(DateTime.Now + ": Unhandled expection thrown by SMS Provider: " + ex.ToString());
+                ConfigMgrWebService.WriteEventLog(String.Format("Unhandled expection thrown by SMS Provider: {0}", ex.Message), EventLogEntryType.Error);
             }
             catch (UnauthorizedAccessException ex)
             {
-                Trace.WriteLine(DateTime.Now + ": Unathorized access exception thrown: " + ex.ToString());
+                ConfigMgrWebService.WriteEventLog(String.Format("Unathorized access exception thrown: {0}", ex.Message), EventLogEntryType.Error);
             }
             catch (Exception ex)
             {
-                Trace.WriteLine(DateTime.Now + ": Unhandled expection thrown: " + ex.ToString());
+                ConfigMgrWebService.WriteEventLog(String.Format("Unhandled expection thrown: {0}", ex.Message), EventLogEntryType.Error);
             }
 
             return null;

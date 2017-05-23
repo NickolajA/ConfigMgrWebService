@@ -13,10 +13,13 @@ using Microsoft.ConfigurationManagement.ManagementProvider;
 using Microsoft.ConfigurationManagement.ManagementProvider.WqlQueryEngine;
 using System.Text;
 using System.Data;
+using System.Reflection;
+using System.DirectoryServices.ActiveDirectory;
+using System.Net;
 
 namespace ConfigMgrWebService
 {
-    [WebService(Name = "ConfigMgr Web Service", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (v1.2.0)", Namespace = "http://www.scconfigmgr.com")]
+    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (v1.3.0)", Namespace = "http://www.scconfigmgr.com")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
     [System.ComponentModel.ToolboxItem(false)]
 
@@ -34,7 +37,8 @@ namespace ConfigMgrWebService
         public enum ADObjectClass
         {
             Group,
-            Computer
+            Computer,
+            User
         }
 
         public enum ADObjectType
@@ -43,28 +47,49 @@ namespace ConfigMgrWebService
             objectGuid
         }
 
-        //' Initialize event logging
-        private EventLog eventLog;
-        private void InitializeComponent()
+        public enum CMObjectType
         {
-            this.eventLog = new EventLog();
-            ((System.ComponentModel.ISupportInitialize)(this.eventLog)).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)(this.eventLog)).EndInit();
+            System = 5,
+            User = 4
+        }
+
+        public enum CMCollectionType
+        {
+            UserCollection = 1,
+            DeviceCollection = 2
+        }
+
+        public enum CMResourceProperty
+        {
+            Name,
+            ResourceID,
+            SMBIOSGUID,
+            CollectionID
+        }
+
+        //' Initialize event logging
+        public static EventLog eventLog;
+
+        public static Stopwatch timer = new Stopwatch();
+
+        public void InitializeComponent()
+        {
+            eventLog = new EventLog();
+            ((System.ComponentModel.ISupportInitialize)(eventLog)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(eventLog)).EndInit();
         }
 
         [WebMethod(Description = "Get primary user(s) for a specific device")]
         public List<string> GetCMPrimaryUserByDevice(string deviceName, string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct relation list
             var relations = new List<string>();
 
             //' Validate secret key
-            if (secret != secretKey)
-            {
-                relations.Add("A secret key was not specified or cannot be validated");
-                return relations;
-            }
-            else
+            if (secret == secretKey)
             {
                 //' Query for user relationship instances
                 SelectQuery relationQuery = new SelectQuery("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceName like '" + deviceName + "'");
@@ -73,30 +98,31 @@ namespace ConfigMgrWebService
                 ManagementObjectSearcher managementObjectSearcher = new ManagementObjectSearcher(managementScope, relationQuery);
 
                 if (managementObjectSearcher != null)
+                {
                     foreach (var userRelation in managementObjectSearcher.Get())
                     {
-                        //' Return user name
-                        string userName = (string) userRelation.GetPropertyValue("UniqueUserName");
+                        //' Get user name
+                        string userName = (string)userRelation.GetPropertyValue("UniqueUserName");
                         relations.Add(userName);
                     }
-                //' Return empty
-                return relations;
+                }
             }
+
+            MethodEnd(method);
+            return relations;
         }
 
         [WebMethod(Description = "Get primary device(s) for a specific user")]
         public List<string> GetCMPrimaryDeviceByUser(string userName, string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct relation list
             var relations = new List<string>();
 
             //' Validate secret key
-            if (secret != secretKey)
-            {
-                relations.Add("A secret key was not specified or cannot be validated");
-                return relations;
-            }
-            else
+            if (secret == secretKey)
             {
                 //' Query for device relationship instances
                 SelectQuery relationQuery = new SelectQuery("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceName like '" + userName + "'");
@@ -105,29 +131,31 @@ namespace ConfigMgrWebService
                 ManagementObjectSearcher managementObjectSearcher = new ManagementObjectSearcher(managementScope, relationQuery);
 
                 if (managementObjectSearcher != null)
+                {
                     foreach (var deviceRelation in managementObjectSearcher.Get())
                     {
-                        //' Return device name
-                        string deviceName = (string) deviceRelation.GetPropertyValue("ResourceName");
+                        //' Get device name
+                        string deviceName = (string)deviceRelation.GetPropertyValue("ResourceName");
                         relations.Add(deviceName);
                     }
-                //' Return empty
-                return relations;
+                }
             }
+
+            MethodEnd(method);
+            return relations;
         }
 
         [WebMethod(Description = "Get deployed applications for a specific user")]
-        public List<Application> GetCMDeployedApplicationsByUser(string userName, string secret)
+        public List<CMApplication> GetCMDeployedApplicationsByUser(string userName, string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct applications list
-            var applicationNames = new List<Application>();
+            var applicationNames = new List<CMApplication>();
 
             //' Validate secret key
-            if (secret != secretKey)
-            {
-                return null;
-            }
-            else
+            if (secret == secretKey)
             {
                 //' Query for specified user
                 SelectQuery userQuery = new SelectQuery("SELECT * FROM SMS_R_User WHERE UserName like '" + userName + "'");
@@ -136,7 +164,9 @@ namespace ConfigMgrWebService
                 ManagementObjectSearcher managementObjectSearcher = new ManagementObjectSearcher(managementScope, userQuery);
 
                 if (managementObjectSearcher.Get() != null)
+                {
                     if (managementObjectSearcher.Get().Count == 1)
+                    {
                         foreach (ManagementObject user in managementObjectSearcher.Get())
                         {
                             //' Define properties from user
@@ -148,6 +178,7 @@ namespace ConfigMgrWebService
                             ManagementObjectSearcher collMembershipSearcher = new ManagementObjectSearcher(managementScope, collMembershipQuery);
 
                             if (collMembershipSearcher.Get() != null)
+                            {
                                 foreach (ManagementObject collUser in collMembershipSearcher.Get())
                                 {
                                     //' Define properties for collection
@@ -158,6 +189,7 @@ namespace ConfigMgrWebService
                                     ManagementObjectSearcher collectionSearcher = new ManagementObjectSearcher(managementScope, collectionQuery);
 
                                     if (collectionSearcher.Get() != null)
+                                    {
                                         foreach (ManagementObject collection in collectionSearcher.Get())
                                         {
                                             //' Define properties for collection
@@ -168,37 +200,42 @@ namespace ConfigMgrWebService
                                             ManagementObjectSearcher deploymentInfoSearcher = new ManagementObjectSearcher(managementScope, deploymentInfoQuery);
 
                                             if (deploymentInfoSearcher.Get() != null)
+                                            {
                                                 foreach (ManagementObject deployment in deploymentInfoSearcher.Get())
                                                 {
                                                     //' Return application object
                                                     string targetName = (string)deployment.GetPropertyValue("TargetName");
                                                     string collectionName = (string)deployment.GetPropertyValue("CollectionName");
-                                                    Application targetApplication = new Application();
+                                                    CMApplication targetApplication = new CMApplication();
                                                     targetApplication.ApplicationName = targetName;
                                                     targetApplication.CollectionName = collectionName;
                                                     applicationNames.Add(targetApplication);
                                                 }
+                                            }
                                         }
+                                    }
                                 }
+                            }
                         }
-                //' Return empty
-                return applicationNames;
+                    }
+                }
             }
+
+            MethodEnd(method);
+            return applicationNames;
         }
 
         [WebMethod(Description = "Get deployed applications for a specific device")]
         public List<string> GetCMDeployedApplicationsByDevice(string deviceName, string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct applications list
-            var applicationNames = new List<string>();
+            List<string> applicationNames = new List<string>();
 
             //' Validate secret key
-            if (secret != secretKey)
-            {
-                applicationNames.Add("A secret key was not specified or cannot be validated");
-                return applicationNames;
-            }
-            else
+            if (secret == secretKey)
             {
                 //' Query for specified device name
                 SelectQuery deviceQuery = new SelectQuery("SELECT * FROM SMS_R_System WHERE Name like '" + deviceName + "'");
@@ -207,7 +244,9 @@ namespace ConfigMgrWebService
                 ManagementObjectSearcher managementObjectSearcher = new ManagementObjectSearcher(managementScope, deviceQuery);
 
                 if (managementObjectSearcher.Get() != null)
+                {
                     if (managementObjectSearcher.Get().Count == 1)
+                    {
                         foreach (ManagementObject device in managementObjectSearcher.Get())
                         {
                             //' Define property variables from device
@@ -219,6 +258,7 @@ namespace ConfigMgrWebService
                             ManagementObjectSearcher collMembershipSearcher = new ManagementObjectSearcher(managementScope, collMembershipQuery);
 
                             if (collMembershipSearcher.Get() != null)
+                            {
                                 foreach (ManagementObject collDevice in collMembershipSearcher.Get())
                                 {
                                     //' Define property variables for collection
@@ -229,6 +269,7 @@ namespace ConfigMgrWebService
                                     ManagementObjectSearcher collectionSearcher = new ManagementObjectSearcher(managementScope, collectionQuery);
 
                                     if (collectionSearcher.Get() != null)
+                                    {
                                         foreach (ManagementObject collection in collectionSearcher.Get())
                                         {
                                             //' Define collection properties
@@ -239,35 +280,41 @@ namespace ConfigMgrWebService
                                             ManagementObjectSearcher deploymentInfoSearcher = new ManagementObjectSearcher(managementScope, deploymentInfoQuery);
 
                                             if (deploymentInfoSearcher.Get() != null)
+                                            {
                                                 foreach (ManagementObject deployment in deploymentInfoSearcher.Get())
                                                 {
                                                     //' Return application name
                                                     string targetName = (string)deployment.GetPropertyValue("TargetName");
                                                     applicationNames.Add(targetName);
                                                 }
+                                            }
                                         }
+                                    }                                       
                                 }
+                            }
                         }
-                //' Return empty
-                return applicationNames;
+                    }
+                }
             }
+
+            MethodEnd(method);
+            return applicationNames;
         }
 
         [WebMethod(Description = "Get all hidden task sequence deployments")]
-        public List<taskSequence> GetCMHiddenTaskSequenceDeployments(string secret)
+        public List<CMTaskSequence> GetCMHiddenTaskSequenceDeployments(string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct hidden task sequences list
-            var hiddenTaskSequences = new List<taskSequence>();
+            var hiddenTaskSequences = new List<CMTaskSequence>();
 
             //' Validate secret key
-            if (secret != secretKey)
-            {
-                return hiddenTaskSequences;
-            }
-            else
+            if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Define query string
@@ -284,7 +331,7 @@ namespace ConfigMgrWebService
                     int advertFlags = queryResult["AdvertFlags"].IntegerValue;
 
                     //' Construct new taskSequence class object and define properties
-                    taskSequence returnObject = new taskSequence();
+                    CMTaskSequence returnObject = new CMTaskSequence();
                     returnObject.PackageName = taskSequenceName;
                     returnObject.AdvertFlags = advertFlags;
                     returnObject.AdvertisementId = advertId;
@@ -293,19 +340,26 @@ namespace ConfigMgrWebService
                     if ((advertFlags & 0x20000000) != 0)
                         hiddenTaskSequences.Add(returnObject);
                 }
-
-                return hiddenTaskSequences;
             }
+
+            MethodEnd(method);
+            return hiddenTaskSequences;
         }
 
         [WebMethod(Description = "Get resource id for device by UUID (SMSBIOSGUID)")]
         public string GetCMDeviceResourceIDByUUID(string secret, string uuid)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Query for device resource
@@ -319,26 +373,29 @@ namespace ConfigMgrWebService
                     foreach (IResultObject device in result)
                     {
                         int id = device["ResourceId"].IntegerValue;
-                        resourceId = id.ToString();
+                        returnValue = id.ToString();
                     }
                 }
+            }
 
-                return resourceId;
-            }
-            else
-            {
-                return string.Empty;
-            }
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Get resource id for device by MAC Address")]
         public string GetCMDeviceResourceIDByMACAddress(string secret, string macAddress)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Query for device resource
@@ -352,62 +409,98 @@ namespace ConfigMgrWebService
                     foreach (IResultObject device in result)
                     {
                         int id = device["ResourceId"].IntegerValue;
-                        resourceId = id.ToString();
+                        returnValue = id.ToString();
                     }
                 }
+            }
 
-                return resourceId;
-            }
-            else
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get resource id for a built-in unknown computer object by UUID (SMSBIOSGUID)")]
+        public string GetCMUnknownComputerResourceIDByUUID(string secret, string uuid)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
+            //' Validate secret key
+            if (secret == secretKey)
             {
-                return string.Empty;
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Query for unknown computer resource
+                string query = String.Format("SELECT * FROM SMS_R_UnknownSystem WHERE SMSUniqueIdentifier like '{0}'", uuid);
+                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                string resourceId = string.Empty;
+
+                if (result != null)
+                {
+                    foreach (IResultObject device in result)
+                    {
+                        int id = device["ResourceId"].IntegerValue;
+                        returnValue = id.ToString();
+                    }
+                }
             }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Get the name of a specific device by UUID (SMBIOS GUID)")]
         public string GetCMDeviceNameByUUID(string secret, string uuid)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Query for device name
                 string query = String.Format("SELECT * FROM SMS_R_System WHERE SMBIOSGUID like '{0}'", uuid);
                 IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
 
-                string deviceName = string.Empty;
-
                 if (result != null)
                 {
                     foreach (IResultObject device in result)
                     {
-                        string name = device["Name"].StringValue;
-                        deviceName = name;
+                        returnValue = device["Name"].StringValue;
                     }
                 }
+            }
 
-                return deviceName;
-            }
-            else
-            {
-                return string.Empty;
-            }
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Get hidden task sequence deployments for a specific resource id")]
-        public List<taskSequence> GetCMHiddenTaskSequenceDeploymentsByResourceId(string secret, string resourceId)
+        public List<CMTaskSequence> GetCMHiddenTaskSequenceDeploymentsByResourceId(string secret, string resourceId)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct hidden task sequences list
-            List<taskSequence> hiddenTaskSequences = new List<taskSequence>();
+            List<CMTaskSequence> hiddenTaskSequences = new List<CMTaskSequence>();
 
             //' Validate secret key
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Query for task sequence deployments
@@ -447,7 +540,7 @@ namespace ConfigMgrWebService
                                     int advertFlags = tsDeployment["AdvertFlags"].IntegerValue;
 
                                     //' Construct taskSequence object
-                                    taskSequence ts = new taskSequence { AdvertFlags = advertFlags, AdvertisementId = advertId, PackageName = packageName };
+                                    CMTaskSequence ts = new CMTaskSequence { AdvertFlags = advertFlags, AdvertisementId = advertId, PackageName = packageName };
 
                                     //' Add object to list if hidden deployment bit exists
                                     if ((advertFlags & 0x20000000) != 0)
@@ -459,27 +552,26 @@ namespace ConfigMgrWebService
                         }
                     }
                 }
+            }
 
-                return hiddenTaskSequences;
-            }
-            else
-            {
-                return hiddenTaskSequences;
-            }
+            MethodEnd(method);
+            return hiddenTaskSequences;
         }
 
         [WebMethod(Description = "Get Boot Image source version")]
         public string GetCMBootImageSourceVersion(string packageId, string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
-            if (secret != secretKey)
-            {
-                return string.Empty;
-            }
-            else
+            if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 try
@@ -487,36 +579,37 @@ namespace ConfigMgrWebService
                     //' Query for Boot Image instance
                     IResultObject queryResult = connection.GetInstance("SMS_BootImagePackage.PackageID='" + packageId + "'");
 
+                    //' Return SourceVersion property from instance
                     if (queryResult != null)
                     {
-                        //' Return SourceVersion property from instance
                         int sourceVersion = queryResult["SourceVersion"].IntegerValue;
-                        return sourceVersion.ToString();
-                    }
-                    else
-                    {
-                        return "Unable to find any Boot Images";
+                        returnValue = sourceVersion.ToString();
                     }
                 }
                 catch (Exception ex)
                 {
                     WriteEventLog(String.Format("An error occured when attempting to retrieve boot image source version. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    return string.Empty;
                 }
             }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Get all discovered users")]
-        public List<User> GetCMDiscoveredUsers(string secret)
+        public List<CMUser> GetCMDiscoveredUsers(string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct users list
-            var userList = new List<User>();
+            var userList = new List<CMUser>();
 
             //' Validate secret key
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Query for all discovered users
@@ -529,9 +622,7 @@ namespace ConfigMgrWebService
                 }
                 catch (Exception ex)
                 {
-                    WriteEventLog("An error occured when an attempt to query for user data from SMS Provider was made", EventLogEntryType.Error);
-                    WriteEventLog(ex.Message, EventLogEntryType.Error);
-                    return userList;
+                    WriteEventLog(String.Format("An error occured when an attempt to query for user data from SMS Provider was made. Error message: {0}", ex.Message), EventLogEntryType.Error);
                 }
                 
                 try
@@ -546,7 +637,7 @@ namespace ConfigMgrWebService
                             string fullDomainName = queryResult["FullDomainName"].StringValue;
 
                             //' Construct new user object
-                            User user = new User();
+                            CMUser user = new CMUser();
                             user.uniqueUserName = uniqueUserName;
                             user.resourceId = resourceId;
                             user.windowsNTDomain = windowsNTDomain;
@@ -559,22 +650,27 @@ namespace ConfigMgrWebService
                 catch (Exception ex)
                 {
                     WriteEventLog(String.Format("An error occured while constructing list of user instances. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    return userList;
                 }
             }
 
-            //' Return list of users
+            MethodEnd(method);
             return userList;
         }
 
         [WebMethod(Description = "Get the unique username for a specific user (useful for setting a value for SMSTSUdaUsers)")]
         public string GetCMUniqueUserName(string userName, string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Query for unique username
@@ -589,16 +685,23 @@ namespace ConfigMgrWebService
                         string uName = queryResult["UserName"].StringValue;
                         string uniqueUserName = queryResult["UniqueUserName"].StringValue;
                         if (uName.ToLower() == userName.ToLower())
-                            return uniqueUserName;
+                            returnValue = uniqueUserName;
                     }
             }
 
-            return string.Empty;
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Import a computer by MAC Address")]
         public string ImportCMComputerByMacAddress(string computerName, string macAddress, string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -611,22 +714,27 @@ namespace ConfigMgrWebService
                 //' Import computer
                 string resourceId = ImportCMComputer(methodParameters);
 
-                return resourceId;
+                returnValue = resourceId;
             }
-            else
-            {
-                return string.Empty;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Import a computer by UUID (SMBIOS GUID)")]
         public string ImportCMComputerByUUID(string computerName, string uuid, string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Construct method parameters
@@ -638,22 +746,27 @@ namespace ConfigMgrWebService
                 //' Import computer
                 string resourceId = ImportCMComputer(methodParameters);
 
-                return resourceId;
+                returnValue = resourceId;
             }
-            else
-            {
-                return string.Empty;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Add a computer to a specific device collection (creates a direct membership rule)")]
         public bool AddCMComputerToCollection(string resourceName, string collectionName, string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
             //' Validate secret key
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Get resource id for given computer name
@@ -693,22 +806,22 @@ namespace ConfigMgrWebService
                             Dictionary<string, object> refreshParams = new Dictionary<string, object>();
                             collection.ExecuteMethod("RequestRefresh", refreshParams);
 
-                            return true;
+                            returnValue = true;
                         }
                     }
                 }
+            }
 
-                return false;
-            }
-            else
-            {
-                return false;
-            }
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Get all or a filtered list of device collections")]
         public List<string> GetCMDeviceCollections(string secret, string filter = null)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct list object
             List<string> collectionList = new List<string>();
 
@@ -716,7 +829,7 @@ namespace ConfigMgrWebService
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Device collection query
@@ -739,23 +852,26 @@ namespace ConfigMgrWebService
                         collectionList.Add(collection["Name"].StringValue);
                     }
                 }
+            }
 
-                return collectionList;
-            }
-            else
-            {
-                return null;
-            }
+            MethodEnd(method);
+            return collectionList;
         }
 
         [WebMethod(Description = "Update membership of a specific collection")]
         public bool UpdateCMCollectionMembership(string secret, string collectionId)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
             //' Validate secret key
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Get collection
@@ -772,30 +888,30 @@ namespace ConfigMgrWebService
 
                         if (exec["ReturnValue"].IntegerValue == 0)
                         {
-                            return true;
+                            returnValue = true;
                         }
                     }
                 }
+            }
 
-                return false;
-            }
-            else
-            {
-                return false;
-            }
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Get Driver Package information by computer model")]
-        public List<driverPackage> GetCMDriverPackageByModel(string secret, string model)
+        public List<CMDriverPackage> GetCMDriverPackageByModel(string secret, string model)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct list for driver package ids
-            List<driverPackage> pkgList = new List<driverPackage>();
+            List<CMDriverPackage> pkgList = new List<CMDriverPackage>();
 
             //' Validate secret key
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Get driver packages
@@ -811,30 +927,30 @@ namespace ConfigMgrWebService
                         string packageId = driverPackage["PackageID"].StringValue;
 
                         //' Add new driver package object to list
-                        driverPackage drvPkg = new driverPackage { PackageName = packageName, PackageID = packageId };
+                        CMDriverPackage drvPkg = new CMDriverPackage { PackageName = packageName, PackageID = packageId };
                         pkgList.Add(drvPkg);
                     }
                 }
+            }
 
-                return pkgList;
-            }
-            else
-            {
-                return pkgList;
-            }
+            MethodEnd(method);
+            return pkgList;
         }
 
         [WebMethod(Description = "Get a filtered list of packages")]
-        public List<package> GetCMPackage(string secret, string filter)
+        public List<CMPackage> GetCMPackage(string secret, string filter)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct list for package ids
-            List<package> pkgList = new List<package>();
+            List<CMPackage> pkgList = new List<CMPackage>();
 
             //' Validate secret key
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Get packages
@@ -848,15 +964,17 @@ namespace ConfigMgrWebService
                         //' Define objects for properties
                         string packageName = package["Name"].StringValue;
                         string packageId = package["PackageID"].StringValue;
+                        string packageDescription = package["Description"].StringValue;
                         string packageManufacturer = package["Manufacturer"].StringValue;
                         string packageLanguage = package["Language"].StringValue;
                         string packageVersion = package["Version"].StringValue;
                         DateTime packageCreated = package["SourceDate"].DateTimeValue;
 
                         //' Add new package object to list
-                        package pkg = new package {
+                        CMPackage pkg = new CMPackage {
                             PackageName = packageName,
                             PackageID = packageId,
+                            PackageDescription = packageDescription,
                             PackageManufacturer = packageManufacturer,
                             PackageLanguage = packageLanguage,
                             PackageVersion = packageVersion,
@@ -865,18 +983,18 @@ namespace ConfigMgrWebService
                         pkgList.Add(pkg);
                     }
                 }
+            }
 
-                return pkgList;
-            }
-            else
-            {
-                return pkgList;
-            }
+            MethodEnd(method);
+            return pkgList;
         }
 
         [WebMethod(Description = "Check for 'Unknown' device record by UUID (SMBIOS GUID)")]
         public List<string> GetCMUnknownDeviceByUUID(string secret, string uuid)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct list for unknown device resource ids
             List<string> resourceIds = new List<string>();
 
@@ -884,7 +1002,7 @@ namespace ConfigMgrWebService
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Get unknown device records
@@ -900,18 +1018,77 @@ namespace ConfigMgrWebService
                         resourceIds.Add(resourceId);
                     }
                 }
+            }
 
-                return resourceIds;
-            }
-            else
+            MethodEnd(method);
+            return resourceIds;
+        }
+
+        [WebMethod(Description = "Retrieve the associated OS Image version for a specific task sequence (supports multiple images)")]
+        public List<string> GetCMOSImageVersionForTaskSequence(string secret, string tsPackageId)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct variable for OS Image version
+            List<string> osVersionList = new List<string>();
+
+            //' Validate secret key
+            if (secret == secretKey)
             {
-                return resourceIds;
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get all task sequence references for specific task sequence
+                string query = String.Format("SELECT * FROM SMS_TaskSequencePackageReference WHERE PackageID like '{0}'", tsPackageId);
+                IResultObject tsReferences = connection.QueryProcessor.ExecuteQuery(query);
+
+                if (tsReferences != null)
+                {
+                    List<string> osImageIds = new List<string>();
+                    UInt32 osImageType = 257;
+                    UInt32 osImageInstallType = 259;
+
+                    //' Process all task sequence references to determine the OS image package ID
+                    foreach (IResultObject reference in tsReferences)
+                    {
+                        if (reference["ObjectType"].IntegerValue == osImageType || reference["ObjectType"].IntegerValue == osImageInstallType)
+                        {
+                            osImageIds.Add(reference["ObjectID"].StringValue);
+                        }
+                    }
+
+                    //' Get image information for detected OS image
+                    if (osImageIds != null)
+                    {
+                        foreach (string osImageId in osImageIds)
+                        {
+                            string imageQuery = String.Format("SELECT * FROM SMS_ImageInformation WHERE PackageID like '{0}'", osImageId);
+                            IResultObject osImageProps = connection.QueryProcessor.ExecuteQuery(imageQuery);
+
+                            if (osImageProps != null)
+                            {
+                                foreach (IResultObject prop in osImageProps)
+                                {
+                                    osVersionList.Add(prop["OSVersion"].StringValue);
+                                }
+                            }
+                        }
+                    }
+                }
             }
+
+            MethodEnd(method);
+            return osVersionList;
         }
 
         [WebMethod(Description = "Delete 'Unknown' device record by UUID (SMBIOS GUID)")]
         public int RemoveCMUnknownDeviceByUUID(string secret, string uuid)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Variable for amount of removed records
             int records = 0;
 
@@ -919,7 +1096,7 @@ namespace ConfigMgrWebService
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Get unknown device records
@@ -935,18 +1112,258 @@ namespace ConfigMgrWebService
                         records++;
                     }
                 }
+            }
 
-                return records;
-            }
-            else
+            MethodEnd(method);
+            return records;
+        }
+
+        [WebMethod(Description = "Remove a device from a specific collection (only for Direct Membership rules")]
+        public bool RemoveCMDeviceFromCollection(string secret, string deviceName, string collectionId)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
             {
-                return records;
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get the device resource instance to be removed from collection
+                CMResource resource = GetCMResource(deviceName, CMObjectType.System, CMResourceProperty.Name);
+                
+                if (resource != null)
+                {
+                    //' Get the collection instance where the device resource will be removed from
+                    IResultObject collection = GetCMCollection(collectionId, CMCollectionType.DeviceCollection);
+
+                    if (collection != null)
+                    {
+                        //' Construct dictionary for removal parameters
+                        Dictionary<string, object> removeParams = new Dictionary<string, object>();
+
+                        //' Construct new direct rule instance and add as param
+                        IResultObject removalRule = connection.CreateInstance("SMS_CollectionRuleDirect");
+                        removalRule["ResourceID"].StringValue = resource.ResourceID.ToString();
+                        removeParams.Add("collectionRule", removalRule);
+
+                        //' Remove direct rule from collection
+                        IResultObject execute = collection.ExecuteMethod("DeleteMembershipRule", removeParams);
+
+                        if (execute["ReturnValue"].IntegerValue == 0)
+                        {
+                            Dictionary<string, object> refreshParams = new Dictionary<string, object>();
+                            IResultObject exec = collection.ExecuteMethod("RequestRefresh", refreshParams);
+
+                            returnValue = true;
+                        }
+                    }
+                }
             }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Remove last PXE advertisement for a specific device")]
+        public bool RemoveCMLastPXEAdvertisementForDevice(string secret, string deviceName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get resource id for device
+                CMResource resource = GetCMResource(deviceName, CMObjectType.System, CMResourceProperty.Name);
+
+                //' Construct list of resource ids
+                List<string> resourceList = new List<string>();
+                resourceList.Add(resource.ResourceID.ToString());
+
+                //' Construct in params for method execution
+                Dictionary<string, object> execParams = new Dictionary<string, object>();
+                execParams.Add("ResourceIDs", resourceList.ToArray());
+
+                //' Clear last PXE advertisement for device
+                IResultObject execute = connection.ExecuteMethod("SMS_Collection", "ClearLastNBSAdvForMachines", execParams);
+
+                if (execute["ReturnValue"].IntegerValue == 0)
+                {
+                    returnValue = true;
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Remove last PXE advertisement for a specific collection")]
+        public bool RemoveCMLastPXEAdvertisementForCollection(string secret, string collectionId)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get collection object
+                IResultObject collection = GetCMCollection(collectionId, CMCollectionType.DeviceCollection);
+
+                //' Construct in params for method execution
+                Dictionary<string, object> execParams = new Dictionary<string, object>();
+
+                //' Clear last PXE advertisement for device
+                if (collection != null)
+                {
+                    IResultObject execute = collection.ExecuteMethod("ClearLastNBSAdvForCollection", execParams);
+
+                    if (execute["ReturnValue"].IntegerValue == 0)
+                    {
+                        returnValue = true;
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Add a computer association between a source and destination device for a single user")]
+        public bool AddCMComputerAssociationForUser(string secret, string sourceName, string destinationName, string userName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get source resource
+                CMResource sourceResource = GetCMResource(sourceName, CMObjectType.System, CMResourceProperty.Name);
+
+                //' Get destination resource
+                CMResource destinationResource = GetCMResource(destinationName, CMObjectType.System, CMResourceProperty.Name);
+
+                if (sourceResource != null && destinationResource != null)
+                {
+                    //' Construct in params for execution
+                    UInt32 migBehavior = 2;
+                    Dictionary<string, object> execParams = new Dictionary<string, object>();
+                    execParams.Add("SourceClientResourceID", sourceResource.ResourceID);
+                    execParams.Add("RestoreClientResourceID", destinationResource.ResourceID);
+                    execParams.Add("MigrationBehavior", migBehavior);
+
+                    //' Construct a list for holding embedded instances
+                    List<IResultObject> userList = new List<IResultObject>();
+
+                    //' Construct embedded instance for user name param info and add to list
+                    IResultObject userInstance = connection.CreateEmbeddedObjectInstance("SMS_StateMigrationUserNames");
+                    userInstance["UserName"].StringValue = userName;
+                    userInstance["LocaleID"].IntegerValue = 0;
+                    userList.Add(userInstance);
+
+                    //' Add list of embedded instances to params
+                    execParams.Add("UserNames", userList);
+
+                    try
+                    {
+                        IResultObject execute = connection.ExecuteMethod("SMS_StateMigration", "AddAssociationEx", execParams);
+                        if (execute["ReturnValue"].IntegerValue == 0)
+                        {
+                            returnValue = true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to create a computer association. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Remove a computer association between a source and destination device")]
+        public bool RemoveCMComputerAssociation(string secret, string sourceName, string destinationName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get source resource
+                CMResource sourceResource = GetCMResource(sourceName, CMObjectType.System, CMResourceProperty.Name);
+
+                //' Get destination resource
+                CMResource destinationResource = GetCMResource(destinationName, CMObjectType.System, CMResourceProperty.Name);
+
+                if (sourceResource != null && destinationResource != null)
+                {
+                    //' Construct in params for execution
+                    Dictionary<string, object> execParams = new Dictionary<string, object>();
+                    execParams.Add("SourceClientResourceID", sourceResource.ResourceID);
+                    execParams.Add("RestoreClientResourceID", destinationResource.ResourceID);
+
+                    try
+                    {
+                        IResultObject execute = connection.ExecuteMethod("SMS_StateMigration", "DeleteAssociation", execParams);
+                        if (execute["ReturnValue"].IntegerValue == 0)
+                        {
+                            returnValue = true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to remove a computer association. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Get deployed applications by collection ID")]
         public List<string> GetCMApplicationDeploymentsByCollectionID(string secret, string collId)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct new list for application deployments
             List<string> appDeployments = new List<string>();
 
@@ -954,14 +1371,13 @@ namespace ConfigMgrWebService
             if (secret == secretKey)
             {
                 //' Connect to SMS Provider
-                smsProvider smsProvider = new smsProvider();
+                SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Get application deployments by collection id
                 string query = String.Format("SELECT * FROM SMS_DeploymentInfo WHERE CollectionID like '{0}' AND DeploymentTypeID like '2'", collId);
                 IResultObject deployments = connection.QueryProcessor.ExecuteQuery(query);
 
-                //' 
                 if (deployments != null)
                 {
                     foreach (IResultObject deployment in deployments)
@@ -971,18 +1387,66 @@ namespace ConfigMgrWebService
                     }
                     appDeployments.Sort();
                 }
+            }
 
-                return appDeployments;
-            }
-            else
+            MethodEnd(method);
+            return appDeployments;
+        }
+
+        [WebMethod(Description = "Get all collections a specific device is a member of by UUID (SMBIOS GUID)")]
+        public List<CMCollection> GetCMCollectionsForDeviceByUUID(string secret, string uuid)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            List<CMCollection> returnValue = new List<CMCollection>();
+
+            //' Validate secret key
+            if (secret == secretKey)
             {
-                return appDeployments;
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get resource
+                CMResource resource = GetCMResource(uuid, CMObjectType.System, CMResourceProperty.SMBIOSGUID);
+
+                //' Get all collections for device
+                string query = String.Format("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID = {0} AND ResourceType = {1:D}", resource.ResourceID, CMObjectType.System);
+                IResultObject collections = connection.QueryProcessor.ExecuteQuery(query);
+
+                if (collections != null)
+                {
+                    foreach (IResultObject collection in collections)
+                    {
+                        //' Construct new collection object
+                        CMCollection coll = new CMCollection();
+
+                        //' Get collection name from collection ID
+                        IResultObject collInstance = GetCMCollection(collection["CollectionID"].StringValue, CMCollectionType.DeviceCollection);
+
+                        //' Add properties to collection object
+                        coll.CollectionID = collection["CollectionID"].StringValue;
+                        coll.Name = collInstance["Name"].StringValue;
+                        returnValue.Add(coll);
+                    }
+                }
             }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Move a computer in Active Directory to a specific organizational unit")]
         public bool SetADOrganizationalUnitForComputer(string secret, string organizationalUnitLocation, string computerName)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1004,22 +1468,70 @@ namespace ConfigMgrWebService
                         DirectoryEntry newLocation = new DirectoryEntry(organizationalUnitLocation);
                         currentObject.MoveTo(newLocation, currentObject.Name);
 
-                        return true;
+                        returnValue = true;
                     }
                     catch (Exception ex)
                     {
                         WriteEventLog(String.Format("An error occured when attempting to move Active Directory object. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                        return false;
                     }
                 }
             }
 
-            return false;
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Set ManagedBy attribute for a specific computer with specified user name")]
+        public bool SetADComputerManagedBy(string secret, string computerName, string userName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get AD computer and user object distinguished names
+                string computerDistinguishedName = GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName);
+                string userDistinguishedName = (GetADObject(userName, ADObjectClass.User, ADObjectType.distinguishedName)).Remove(0, 7);
+
+                if (!String.IsNullOrEmpty(computerDistinguishedName) && !String.IsNullOrEmpty(userDistinguishedName))
+                {
+                    try
+                    {
+                        //' Add user to ManagedBy attribute and commit
+                        DirectoryEntry computerEntry = new DirectoryEntry(computerDistinguishedName);
+                        computerEntry.Properties["ManagedBy"].Clear();
+                        computerEntry.Properties["ManagedBy"].Add(userDistinguishedName);
+                        computerEntry.CommitChanges();
+
+                        //' Dispose object
+                        computerEntry.Dispose();
+
+                        returnValue = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to add a user as ManagedBy for a computer object in Active Directory. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Add a computer in Active Directory to a specific group")]
         public bool AddADComputerToGroup(string secret, string groupName, string computerName)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1039,22 +1551,25 @@ namespace ConfigMgrWebService
                         //' Dispose object
                         groupEntry.Dispose();
 
-                        return true;
+                        returnValue = true;
                     }
                     catch (Exception ex)
                     {
                         WriteEventLog(String.Format("An error occured when attempting to add a computer object in Active Directory to a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                        return false;
                     }
                 }
             }
 
-            return false;
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Remove a computer in Active Directory from a specific group")]
         public bool RemoveADComputerFromGroup(string secret, string groupName, string computerName)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Set return value variable
             bool returnValue = false;
 
@@ -1084,23 +1599,27 @@ namespace ConfigMgrWebService
 
                         //' Dispose object
                         groupEntry.Dispose();
-
-                        return returnValue;
                     }
                     catch (Exception ex)
                     {
                         WriteEventLog(String.Format("An error occured when attempting to remove a computer object in Active Directory from a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                        return returnValue;
                     }
                 }
             }
 
+            MethodEnd(method);
             return returnValue;
         }
 
         [WebMethod(Description = "Set the description field for a computer in Active Directory")]
         public bool SetADComputerDescription(string secret, string computerName, string description)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1119,7 +1638,7 @@ namespace ConfigMgrWebService
                         //' Dispose object
                         computerEntry.Dispose();
 
-                        return true;
+                        returnValue = true;
                     }
                     catch (Exception ex)
                     {
@@ -1128,12 +1647,46 @@ namespace ConfigMgrWebService
                 }
             }
 
-            return false;
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get the Active Directory site name by IP address")]
+        public string GetADSiteNameByIPAddress(string secret, string forestName, string ipAddress)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for site name
+            string siteName = string.Empty;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get all subnets for specified forest
+                Dictionary<string, string> subnets = GetADSubnets(forestName);
+
+                foreach (KeyValuePair<string, string> subnet in subnets)
+                {
+                    var ipData = IPAddresses.GetSubnetAndMaskFromCidr(subnet.Key);
+                    bool result = IPAddresses.IsAddressOnSubnet(IPAddress.Parse(ipAddress), ipData.Item1, ipData.Item2);
+                    if (result == true)
+                    {
+                        siteName = subnet.Value;
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return siteName;
         }
 
         [WebMethod(Description = "Get MDT roles from database (Application Pool identity needs access permissions to the specified MDT database)")]
         public List<string> GetMDTRoles(string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
             //' Construct list object
             List<string> roleList = new List<string>();
 
@@ -1172,12 +1725,19 @@ namespace ConfigMgrWebService
                 }
             }
 
+            MethodEnd(method);
             return roleList;
         }
 
         [WebMethod(Description = "Get computer by asset tag from MDT database")]
         public string GetMDTComputerByAssetTag(string secret, string assetTag)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1188,23 +1748,23 @@ namespace ConfigMgrWebService
                 string identity = GetMDTComputerIdentity(connectionString, "AssetTag", assetTag);
                 if (!String.IsNullOrEmpty(identity))
                 {
-                    return identity;
-                }
-                else
-                {
-                    return string.Empty;
+                    returnValue = identity;
                 }
             }
-            else
-            {
-                //' Return null when secret key is not passed correctly
-                return null;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Check if a computer with a specific MAC address exists in MDT database")]
         public string GetMDTComputerByMacAddress(string secret, string macAddress)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1215,23 +1775,23 @@ namespace ConfigMgrWebService
                 string identity = GetMDTComputerIdentity(connectionString, "MacAddress", macAddress);
                 if (!String.IsNullOrEmpty(identity))
                 {
-                    return identity;
-                }
-                else
-                {
-                    return string.Empty;
+                    returnValue = identity;
                 }
             }
-            else
-            {
-                //' Return null when secret key is not passed correctly
-                return null;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Get computer by serial number from MDT database")]
         public string GetMDTComputerBySerialNumber(string secret, string serialNumber)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1242,23 +1802,23 @@ namespace ConfigMgrWebService
                 string identity = GetMDTComputerIdentity(connectionString, "SerialNumber", serialNumber);
                 if (!String.IsNullOrEmpty(identity))
                 {
-                    return identity;
-                }
-                else
-                {
-                    return string.Empty;
+                    returnValue = identity;
                 }
             }
-            else
-            {
-                //' Return null when secret key is not passed correctly
-                return null;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Check if a computer with a specific UUID exists in MDT database")]
         public string GetMDTComputerByUUID(string secret, string uuid)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1269,23 +1829,23 @@ namespace ConfigMgrWebService
                 string identity = GetMDTComputerIdentity(connectionString, "UUID", uuid);
                 if (!String.IsNullOrEmpty(identity))
                 {
-                    return identity;
-                }
-                else
-                {
-                    return string.Empty;
+                    returnValue = identity;
                 }
             }
-            else
-            {
-                //' Return null when secret key is not passed correctly
-                return null;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Get MDT roles with detailed information for a specific computer")]
         public List<MDTRole> GetMDTDetailedComputerRoleMembership(string secret, string identity)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct List to hold all roles
+            List<MDTRole> roleList = new List<MDTRole>();
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1307,9 +1867,6 @@ namespace ConfigMgrWebService
                     command.Parameters.Add("@ID", SqlDbType.NVarChar).Value = identity;
                     command.CommandText = sqlString.ToString();
 
-                    //' Construct List to hold all roles
-                    List<MDTRole> roleList = new List<MDTRole>();
-
                     //' Invoke SQL command to retrieve roles
                     try
                     {
@@ -1324,35 +1881,35 @@ namespace ConfigMgrWebService
                                 roleList.Add(mdtRole);
                             }
                         }
-
-                        //' Cleanup and disconnect SQL connection
-                        command.Dispose();
-                        connection.Close();
-
-                        return roleList;
                     }
                     catch (Exception ex)
                     {
                         WriteEventLog(String.Format("An error occured when attempting to get role memberships. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                        return null;
                     }
+
+                    //' Cleanup and disconnect SQL connection
+                    command.Dispose();
+                    connection.Close();
                 }
                 catch (SqlException ex)
                 {
                     WriteEventLog(String.Format("An error occured while connecting to SQL server hosting MDT database. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    return null;
                 }
             }
-            else
-            {
-                //' Return null when secret key is not passed correctly
-                return null;
-            }
+
+            MethodEnd(method);
+            return roleList;
         }
 
         [WebMethod(Description = "Get a list of MDT roles for a specific computer")]
         public List<string> GetMDTComputerRoleMembership(string id, string secret)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct List to hold all roles
+            List<string> roleList = new List<string>();
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1374,9 +1931,6 @@ namespace ConfigMgrWebService
                     command.Parameters.Add("@ID", SqlDbType.NVarChar).Value = id;
                     command.CommandText = sqlString.ToString();
 
-                    //' Construct List to hold all roles
-                    List<string> roleList = new List<string>();
-
                     //' Invoke SQL command to retrieve roles
                     try
                     {
@@ -1388,58 +1942,58 @@ namespace ConfigMgrWebService
                                 roleList.Add(reader["Role"].ToString());
                             }
                         }
-
-                        //' Cleanup and disconnect SQL connection
-                        command.Dispose();
-                        connection.Close();
-
-                        return roleList;
                     }
                     catch (Exception ex)
                     {
                         WriteEventLog(String.Format("An error occured when attempting to get role memberships. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                        return null;
                     }
+
+                    //' Cleanup and disconnect SQL connection
+                    command.Dispose();
+                    connection.Close();
                 }
                 catch (SqlException ex)
                 {
                     WriteEventLog(String.Format("An error occured while connecting to SQL server hosting MDT database. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    return null;
                 }
             }
-            else
-            {
-                //' Return null when secret key is not passed correctly
-                return null;
-            }
+
+            MethodEnd(method);
+            return roleList;
         }
 
         [WebMethod(Description = "Get MDT computer name by computer identity")]
         public string GetMDTComputerNameByIdentity(string secret, string identity)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
             //' Validate secret key
             if (secret == secretKey)
             {
                 string computerIdentity = GetMDTComputerName(identity);
                 if (!String.IsNullOrEmpty(computerIdentity))
                 {
-                    return computerIdentity;
-                }
-                else
-                {
-                    return string.Empty;
+                    returnValue = computerIdentity;
                 }
             }
-            else
-            {
-                //' Return empty string when secret key is not passed correctly
-                return string.Empty;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Add computer identified by an asset tag to a specific MDT role")]
         public bool AddMDTRoleMemberByAssetTag(string roleName, string computerName, string assetTag, string secret, bool createComputer, string identity = null)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1451,25 +2005,27 @@ namespace ConfigMgrWebService
 
                 if (createComputer == true)
                 {
-                    bool result = BeginMDTRoleMember(dictionary, computerName, roleName);
-                    return result;
+                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
                 }
                 else
                 {
-                    bool result = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
-                    return result;
+                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
                 }
             }
-            else
-            {
-                //' Return false when secret key is not passed correctly
-                return false;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Add computer identified by a serial number to a specific MDT role")]
         public bool AddMDTRoleMemberBySerialNumber(string roleName, string computerName, string serialNumber, string secret, bool createComputer, string identity = null)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1481,26 +2037,28 @@ namespace ConfigMgrWebService
 
                 if (createComputer == true)
                 {
-                    bool result = BeginMDTRoleMember(dictionary, computerName, roleName);
-                    return result;
+                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
                 }
                 else
                 {
-                    bool result = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
-                    return result;
+                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
                 }
 
             }
-            else
-            {
-                //' Return false when secret key is not passed correctly
-                return false;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Add computer identified by a MAC address to a specific MDT role")]
         public bool AddMDTRoleMemberByMacAddress(string roleName, string computerName, string macAddress, string secret, bool createComputer, string identity = null)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1512,25 +2070,27 @@ namespace ConfigMgrWebService
 
                 if (createComputer == true)
                 {
-                    bool result = BeginMDTRoleMember(dictionary, computerName, roleName);
-                    return result;
+                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
                 }
                 else
                 {
-                    bool result = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
-                    return result;
+                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
                 }
             }
-            else
-            {
-                //' Return false when secret key is not passed correctly
-                return false;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Add computer identified by an UUID to a specific MDT role")]
         public bool AddMDTRoleMemberByUUID(string roleName, string computerName, string uuid, string secret, bool createComputer, string identity = null)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1542,25 +2102,27 @@ namespace ConfigMgrWebService
 
                 if (createComputer == true)
                 {
-                    bool result = BeginMDTRoleMember(dictionary, computerName, roleName);
-                    return result;
+                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
                 }
                 else
                 {
-                    bool result = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
-                    return result;
+                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
                 }
             }
-            else
-            {
-                //' Return false when secret key is not passed correctly
-                return false;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Add computer to a given MDT role (supports multiple indentification types)")]
         public bool AddMDTRoleMember(string computerName, string role, string secret, string assetTag = null, string serialNumber = null, string macAddress = null, string uuid = null, string description = null)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
             //' Validate secret key
             if (secret == secretKey)
             {
@@ -1571,34 +2133,37 @@ namespace ConfigMgrWebService
                 dictionary.Add("UUID", uuid);
                 dictionary.Add("Description", description);
 
-                bool result = BeginMDTRoleMember(dictionary, computerName, role);
-                return result;
+                returnValue = BeginMDTRoleMember(dictionary, computerName, role);
             }
-            else
-            {
-                //' Return false when secret key is not passed correctly
-                return false;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Remove MDT computer from all associated roles")]
         public bool RemoveMDTComputerFromRoles(string secret, string identity)
         {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
             //' Validate secret key
             if (secret == secretKey)
             {
-                bool removeResult = RemoveMDTComputerRoles(identity);
-                return removeResult;
+                returnValue = RemoveMDTComputerRoles(identity);
             }
-            else
-            {
-                //' Return false when secret key is not passed correctly
-                return false;
-            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         private bool BeginMDTRoleMember(Dictionary<string, string> dictionary, string computerName, string roleName, bool createComputer = true, string identity = null)
         {
+            //' Variable for return value
+            bool returnValue = false;
+
             if (createComputer == true)
             {
                 //' Create computer identity in MDT database
@@ -1615,19 +2180,7 @@ namespace ConfigMgrWebService
                         {
                             return true;
                         }
-                        else
-                        {
-                            return false;
-                        }
                     }
-                    else
-                    {
-                        return false;
-                    }
-                }
-                else
-                {
-                    return false;
                 }
             }
             else
@@ -1638,12 +2191,9 @@ namespace ConfigMgrWebService
                 {
                     return true;
                 }
-                else
-                {
-                    return false;
-                }
             }
 
+            return returnValue;
         }
 
         private string AddMDTComputerIdentity(Dictionary<string, string> dictionary)
@@ -2068,10 +2618,67 @@ namespace ConfigMgrWebService
             }
         }
 
+        private CMResource GetCMResource(string identification, CMObjectType resourceType, CMResourceProperty resourceProperty)
+        {
+            CMResource resource = new CMResource();
+
+            //' Connect to SMS Provider
+            SmsProvider smsProvider = new SmsProvider();
+            WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+            //' Get resource instance
+            string query = string.Empty;
+            switch (resourceType)
+            {
+                case CMObjectType.System:
+                    query = String.Format("SELECT * FROM SMS_R_System WHERE {0} like '{1}'", resourceProperty, identification);
+                    break;
+                case CMObjectType.User:
+                    query = String.Format("SELECT * FROM SMS_R_User WHERE {0} like '{1}'", resourceProperty, identification);
+                    break;
+            }
+
+            IResultObject instances = connection.QueryProcessor.ExecuteQuery(query);
+
+            if (instances != null)
+            {
+                foreach (IResultObject res in instances)
+                {
+                    resource.Name = res["Name"].StringValue;
+                    resource.ResourceID = res["ResourceID"].IntegerValue;
+                }
+            }
+
+            return resource;
+        }
+
+        private IResultObject GetCMCollection(string collectionId, CMCollectionType collectionType)
+        {
+            IResultObject collection = null;
+
+            //' Connect to SMS Provider
+            SmsProvider smsProvider = new SmsProvider();
+            WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+            //' Get collection instance
+            string query = String.Format("SELECT * FROM SMS_Collection WHERE CollectionID like '{0}' AND CollectionType like '{1:D}'", collectionId, collectionType);
+            IResultObject instances = connection.QueryProcessor.ExecuteQuery(query);
+
+            if (instances != null)
+            {
+                foreach (IResultObject coll in instances)
+                {
+                    collection = coll;
+                }
+            }
+
+            return collection;
+        }
+
         private string ImportCMComputer(Dictionary<string, object> methodParameters)
         {
             //' Connect to SMS Provider
-            smsProvider smsProvider = new smsProvider();
+            SmsProvider smsProvider = new SmsProvider();
             WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
             //' Initiate string for resourceId of imported computer
@@ -2095,7 +2702,7 @@ namespace ConfigMgrWebService
         private string GetCMCompterResourceId(string computerName)
         {
             //' Connect to SMS Provider
-            smsProvider smsProvider = new smsProvider();
+            SmsProvider smsProvider = new SmsProvider();
             WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
             //' Construct query for resource id
@@ -2138,20 +2745,6 @@ namespace ConfigMgrWebService
             return connectionString;
         }
 
-        private void WriteEventLog(string logEntry, EventLogEntryType entryType)
-        {
-            using (eventLog = new EventLog())
-            {
-                if (!EventLog.SourceExists("ConfigMgr Web Service"))
-                {
-                    EventLog.CreateEventSource("ConfigMgr Web Service", "ConfigMgr Web Service Activity");
-                }
-                eventLog.Source = "ConfigMgr Web Service";
-                eventLog.Log = "ConfigMgr Web Service Activity";
-                eventLog.WriteEntry(logEntry, entryType, 1000);
-            }
-        }
-
         private string GetADDefaultNamingContext()
         {
             string defaultNamingContext;
@@ -2185,6 +2778,9 @@ namespace ConfigMgrWebService
                     break;
                 case ADObjectClass.Group:
                     directorySearcher.Filter = String.Format("(&(objectClass=group)((sAMAccountName={0})))", name);
+                    break;
+                case ADObjectClass.User:
+                    directorySearcher.Filter = String.Format("(&(objectClass=user)((sAMAccountName={0})))", name);
                     break;
             }
 
@@ -2220,6 +2816,101 @@ namespace ConfigMgrWebService
             domain.Dispose();
 
             return returnValue;
+        }
+
+        public static Dictionary<string, string> GetADSubnets(string forestName)
+        {
+            //' Construct dictionary to hold detected subnets
+            Dictionary<string, string> subnetList = new Dictionary<string, string>();
+
+            //' Construct a read-only collection for all site objects
+            ReadOnlySiteCollection siteCollection = default(ReadOnlySiteCollection);
+
+            //' Get active directory forst context
+            DirectoryContext context = new DirectoryContext(DirectoryContextType.Forest, forestName);
+            Forest forest = Forest.GetForest(context);
+
+            if (forest != null)
+            {
+                //' Process each site in forest to get subnets
+                siteCollection = forest.Sites;
+                for (int i = 0; i <= siteCollection.Count - 1; i++)
+                {
+                    ActiveDirectorySite currentSite = siteCollection[i];
+                    foreach (ActiveDirectorySubnet subnet in currentSite.Subnets)
+                    {
+                        subnetList.Add(subnet.Name, subnet.Site.ToString());
+                    }
+
+                }
+            }
+
+            return subnetList;
+        }
+
+        private static string GetUserHostAddress()
+        {
+            string address = HttpContext.Current.Request.UserHostAddress;
+
+            return address;
+        }
+
+        private static void MethodBegin(MethodBase methodBase)
+        {
+            StartTimer();
+            WriteEventLog(String.Format("Web service method {0} was triggered from {1}", methodBase.Name, GetUserHostAddress()), EventLogEntryType.Information);
+        }
+
+        private static void MethodEnd(MethodBase methodBase)
+        {
+            TimeSpan time = StopTimer();
+            string elapsedTime = String.Format("{0:00}:{1:00}:{2:00}", time.Hours, time.Minutes, time.Seconds);
+            WriteEventLog(String.Format("Web service method {0} completed. Elapsed time: {1}", methodBase.Name, elapsedTime), EventLogEntryType.Information);
+        }
+
+        private static void StartTimer()
+        {
+            timer.Start();
+        }
+
+        private static TimeSpan StopTimer()
+        {
+            TimeSpan timeSpan = timer.Elapsed;
+            timer.Reset();
+
+            return timeSpan;
+        }
+
+        public static void WriteEventLog(string logEntry, EventLogEntryType entryType)
+        {
+            using (eventLog = new EventLog())
+            {
+                //' Check if event log exists, otherwise create new event log
+                if (!EventLog.SourceExists("ConfigMgr Web Service"))
+                {
+                    EventLog.CreateEventSource("ConfigMgr Web Service", "ConfigMgr Web Service Activity");
+                }
+
+                //' Determine event log number
+                int eventNumber = 0;
+                switch (entryType)
+                {
+                    case EventLogEntryType.Information:
+                        eventNumber = 1000;
+                        break;
+                    case EventLogEntryType.Warning:
+                        eventNumber = 1001;
+                        break;
+                    case EventLogEntryType.Error:
+                        eventNumber = 1002;
+                        break;
+                }
+
+                //' Set event log source and write new entry
+                eventLog.Source = "ConfigMgr Web Service";
+                eventLog.Log = "ConfigMgr Web Service Activity";
+                eventLog.WriteEntry(logEntry, entryType, eventNumber);
+            }
         }
     }
 }

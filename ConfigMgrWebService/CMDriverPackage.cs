@@ -5,10 +5,9 @@ using System.Web;
 
 namespace ConfigMgrWebService
 {
-    public class taskSequence
+    public class CMDriverPackage
     {
         public string PackageName { get; set; }
-        public string AdvertisementId { get; set; }
-        public int AdvertFlags { get; set; }
+        public string PackageID { get; set; }
     }
 }

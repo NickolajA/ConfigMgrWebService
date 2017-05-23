@@ -5,9 +5,9 @@ using System.Web;
 
 namespace ConfigMgrWebService
 {
-    public class Application
+    public class CMCollection
     {
-        public string ApplicationName { get; set; }
-        public string CollectionName { get; set; }
+        public string Name { get; set; }
+        public string CollectionID { get; set; }
     }
 }

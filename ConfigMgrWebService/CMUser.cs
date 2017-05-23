@@ -5,7 +5,7 @@ using System.Web;
 
 namespace ConfigMgrWebService
 {
-    public class User
+    public class CMUser
     {
         public string uniqueUserName { get; set; }
         public string resourceId { get; set; }

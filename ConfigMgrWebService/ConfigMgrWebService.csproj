@@ -56,6 +56,7 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.DirectoryServices" />
     <Reference Include="System.Management" />
+    <Reference Include="System.Numerics" />
     <Reference Include="System.Web.DynamicData" />
     <Reference Include="System.Web.Entity" />
     <Reference Include="System.Web.ApplicationServices" />
@@ -87,13 +88,16 @@
     <Content Include="ConfigMgrWebService.asmx" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Application.cs" />
+    <Compile Include="CMApplication.cs" />
+    <Compile Include="CMCollection.cs" />
+    <Compile Include="CMResource.cs" />
+    <Compile Include="IPAddresses.cs" />
     <Compile Include="MDTRole.cs" />
-    <Compile Include="package.cs" />
-    <Compile Include="driverPackage.cs" />
-    <Compile Include="user.cs" />
-    <Compile Include="taskSequence.cs" />
-    <Compile Include="smsProvider.cs" />
+    <Compile Include="CMPackage.cs" />
+    <Compile Include="CMDriverPackage.cs" />
+    <Compile Include="CMUser.cs" />
+    <Compile Include="CMTaskSequence.cs" />
+    <Compile Include="SmsProvider.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="ConfigMgrWebService.asmx.cs">
       <DependentUpon>ConfigMgrWebService.asmx</DependentUpon>
