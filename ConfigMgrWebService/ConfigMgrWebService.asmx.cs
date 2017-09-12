@@ -19,7 +19,7 @@ using System.Net;
 
 namespace ConfigMgrWebService
 {
-    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (v1.3.0)", Namespace = "http://www.scconfigmgr.com")]
+    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (v1.4.0)", Namespace = "http://www.scconfigmgr.com")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
     [System.ComponentModel.ToolboxItem(false)]
 
@@ -79,6 +79,14 @@ namespace ConfigMgrWebService
             ((System.ComponentModel.ISupportInitialize)(eventLog)).EndInit();
         }
 
+        [WebMethod(Description = "Get web service version")]
+        public string GetWebServiceVersion()
+        {
+            Version version = Assembly.GetExecutingAssembly().GetName().Version;
+
+            return version.ToString(3);
+        }
+        
         [WebMethod(Description = "Get primary user(s) for a specific device")]
         public List<string> GetCMPrimaryUserByDevice(string deviceName, string secret)
         {
@@ -638,10 +646,10 @@ namespace ConfigMgrWebService
 
                             //' Construct new user object
                             CMUser user = new CMUser();
-                            user.uniqueUserName = uniqueUserName;
-                            user.resourceId = resourceId;
-                            user.windowsNTDomain = windowsNTDomain;
-                            user.fullDomainName = fullDomainName;
+                            user.UniqueUserName = uniqueUserName;
+                            user.ResourceId = resourceId;
+                            user.WindowsNTDomain = windowsNTDomain;
+                            user.FullDomainName = fullDomainName;
 
                             //' Add user object to user list
                             userList.Add(user);
@@ -687,6 +695,50 @@ namespace ConfigMgrWebService
                         if (uName.ToLower() == userName.ToLower())
                             returnValue = uniqueUserName;
                     }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get a user object with the most commonly referenced properties")]
+        public CMUser GetCMUser(string secret, string samAccountName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            CMUser returnValue = null;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Query for unique username
+                string query = String.Format("SELECT * FROM SMS_R_User WHERE UserName like '{0}'", samAccountName);
+
+                IResultObject results = connection.QueryProcessor.ExecuteQuery(query);
+                if (results != null)
+                {
+                    foreach (IResultObject result in results)
+                    {
+                        //' Construct new user object
+                        returnValue = new CMUser();
+
+                        //' Set user object properties from query results
+                        returnValue.ResourceId = result["ResourceID"].StringValue;
+                        returnValue.DistinguishedName = result["DistinguishedName"].StringValue;
+                        returnValue.FullDomainName = result["FullDomainName"].StringValue;
+                        returnValue.FullUserName = result["FullUserName"].StringValue;
+                        returnValue.Name = result["Name"].StringValue;
+                        returnValue.UniqueUserName = result["UniqueUserName"].StringValue;
+                        returnValue.UserPrincipalName = result["UserPrincipalName"].StringValue;
+                        returnValue.WindowsNTDomain = result["WindowsNTDomain"].StringValue;
+                    }
+                }
             }
 
             MethodEnd(method);
@@ -1036,51 +1088,42 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                //' Connect to SMS Provider
-                SmsProvider smsProvider = new SmsProvider();
-                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+                //' Get OS image property info
+                List<string> propsInfo = GetOSImageProperty("OSVersion", tsPackageId);
 
-                //' Get all task sequence references for specific task sequence
-                string query = String.Format("SELECT * FROM SMS_TaskSequencePackageReference WHERE PackageID like '{0}'", tsPackageId);
-                IResultObject tsReferences = connection.QueryProcessor.ExecuteQuery(query);
-
-                if (tsReferences != null)
+                foreach (string prop in propsInfo)
                 {
-                    List<string> osImageIds = new List<string>();
-                    UInt32 osImageType = 257;
-                    UInt32 osImageInstallType = 259;
-
-                    //' Process all task sequence references to determine the OS image package ID
-                    foreach (IResultObject reference in tsReferences)
-                    {
-                        if (reference["ObjectType"].IntegerValue == osImageType || reference["ObjectType"].IntegerValue == osImageInstallType)
-                        {
-                            osImageIds.Add(reference["ObjectID"].StringValue);
-                        }
-                    }
-
-                    //' Get image information for detected OS image
-                    if (osImageIds != null)
-                    {
-                        foreach (string osImageId in osImageIds)
-                        {
-                            string imageQuery = String.Format("SELECT * FROM SMS_ImageInformation WHERE PackageID like '{0}'", osImageId);
-                            IResultObject osImageProps = connection.QueryProcessor.ExecuteQuery(imageQuery);
-
-                            if (osImageProps != null)
-                            {
-                                foreach (IResultObject prop in osImageProps)
-                                {
-                                    osVersionList.Add(prop["OSVersion"].StringValue);
-                                }
-                            }
-                        }
-                    }
+                    osVersionList.Add(prop);
                 }
             }
 
             MethodEnd(method);
             return osVersionList;
+        }
+
+        [WebMethod(Description = "Retrieve the associated OS Image architecture for a specific task sequence (supports multiple images)")]
+        public List<string> GetCMOSImageArchitectureForTaskSequence(string secret, string tsPackageId)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct variable for OS Image version
+            List<string> osArchitectureList = new List<string>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get OS image property info
+                List<string> propsInfo = GetOSImageProperty("Architecture", tsPackageId);
+
+                foreach (string prop in propsInfo)
+                {
+                    osArchitectureList.Add(prop);
+                }
+            }
+
+            MethodEnd(method);
+            return osArchitectureList;
         }
 
         [WebMethod(Description = "Delete 'Unknown' device record by UUID (SMBIOS GUID)")]
@@ -1436,6 +1479,44 @@ namespace ConfigMgrWebService
 
             MethodEnd(method);
             return returnValue;
+        }
+
+        [WebMethod(Description = "Get all applications and filter by administrative category")]
+        public List<CMApplication> GetCMApplicationByCategory(string secret, string categoryName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            List<CMApplication> appList = new List<CMApplication>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get applications matching category name
+                string appQuery = String.Format("SELECT * FROM SMS_ApplicationLatest WHERE (IsHidden = 0) AND (LocalizedCategoryInstanceNames = '{0}')", categoryName);
+                IResultObject appInstances = connection.QueryProcessor.ExecuteQuery(appQuery);
+
+                if (appInstances != null)
+                {
+                    foreach (IResultObject app in appInstances)
+                    {
+                        //' Construct a new CMApplication object
+                        CMApplication application = new CMApplication();
+
+                        //' Assign properties to CMApplication object from query result and add object to list
+                        application.ApplicationName = app["LocalizedDisplayName"].StringValue;
+                        appList.Add(application);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return appList;
         }
 
         [WebMethod(Description = "Move a computer in Active Directory to a specific organizational unit")]
@@ -2673,6 +2754,55 @@ namespace ConfigMgrWebService
             }
 
             return collection;
+        }
+
+        private List<string> GetOSImageProperty(string property, string tsPackageId)
+        {
+            List<string> osPropertyList = new List<string>();
+
+            //' Connect to SMS Provider
+            SmsProvider smsProvider = new SmsProvider();
+            WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+            //' Get all task sequence references for specific task sequence
+            string query = String.Format("SELECT * FROM SMS_TaskSequencePackageReference WHERE PackageID like '{0}'", tsPackageId);
+            IResultObject tsReferences = connection.QueryProcessor.ExecuteQuery(query);
+
+            if (tsReferences != null)
+            {
+                List<string> osImageIds = new List<string>();
+                UInt32 osImageType = 257;
+                UInt32 osImageInstallType = 259;
+
+                //' Process all task sequence references to determine the OS image package ID
+                foreach (IResultObject reference in tsReferences)
+                {
+                    if (reference["ObjectType"].IntegerValue == osImageType || reference["ObjectType"].IntegerValue == osImageInstallType)
+                    {
+                        osImageIds.Add(reference["ObjectID"].StringValue);
+                    }
+                }
+
+                //' Get image information for detected OS image
+                if (osImageIds != null)
+                {
+                    foreach (string osImageId in osImageIds)
+                    {
+                        string imageQuery = String.Format("SELECT * FROM SMS_ImageInformation WHERE PackageID like '{0}'", osImageId);
+                        IResultObject osImageProps = connection.QueryProcessor.ExecuteQuery(imageQuery);
+
+                        if (osImageProps != null)
+                        {
+                            foreach (IResultObject prop in osImageProps)
+                            {
+                                osPropertyList.Add(prop[property].StringValue);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return osPropertyList;
         }
 
         private string ImportCMComputer(Dictionary<string, object> methodParameters)

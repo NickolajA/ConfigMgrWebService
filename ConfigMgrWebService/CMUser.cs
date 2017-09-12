@@ -7,9 +7,13 @@ namespace ConfigMgrWebService
 {
     public class CMUser
     {
-        public string uniqueUserName { get; set; }
-        public string resourceId { get; set; }
-        public string windowsNTDomain { get; set; }
-        public string fullDomainName { get; set; }
+        public string UniqueUserName { get; set; }
+        public string ResourceId { get; set; }
+        public string WindowsNTDomain { get; set; }
+        public string FullDomainName { get; set; }
+        public string FullUserName { get; set; }
+        public string UserPrincipalName { get; set; }
+        public string Name { get; set; }
+        public string DistinguishedName { get; set; }
     }
 }
