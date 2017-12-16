@@ -15,11 +15,14 @@ using System.Text;
 using System.Data;
 using System.Reflection;
 using System.DirectoryServices.ActiveDirectory;
+using System.DirectoryServices.AccountManagement;
 using System.Net;
+using System.Security;
+using System.Runtime.InteropServices;
 
 namespace ConfigMgrWebService
 {
-    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (v1.4.0)", Namespace = "http://www.scconfigmgr.com")]
+    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (1.5.0)", Namespace = "http://www.scconfigmgr.com")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
     [System.ComponentModel.ToolboxItem(false)]
 
@@ -38,6 +41,7 @@ namespace ConfigMgrWebService
         {
             Group,
             Computer,
+            DomainController,
             User
         }
 
@@ -69,7 +73,6 @@ namespace ConfigMgrWebService
 
         //' Initialize event logging
         public static EventLog eventLog;
-
         public static Stopwatch timer = new Stopwatch();
 
         public void InitializeComponent()
@@ -80,15 +83,15 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Get web service version")]
-        public string GetWebServiceVersion()
+        public string GetCWVersion()
         {
             Version version = Assembly.GetExecutingAssembly().GetName().Version;
 
             return version.ToString(3);
         }
         
-        [WebMethod(Description = "Get primary user(s) for a specific device")]
-        public List<string> GetCMPrimaryUserByDevice(string deviceName, string secret)
+        [WebMethod(Description = "Get primary user(s) for a specific device by name")]
+        public List<string> GetCMPrimaryUserByDeviceName(string secret, string deviceName)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -120,8 +123,64 @@ namespace ConfigMgrWebService
             return relations;
         }
 
+        [WebMethod(Description = "Get primary user(s) for a specific device by resourceId")]
+        public List<CMUserDeviceRelation> GetCMPrimaryUserByDeviceResourceId(string secret, string resourceId)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct relation list
+            List<CMUserDeviceRelation> relations = new List<CMUserDeviceRelation>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get all user device relationsship for specified resource id
+                string relQuery = String.Format("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceID = '{0}'", resourceId);
+                IResultObject relResults = connection.QueryProcessor.ExecuteQuery(relQuery);
+
+                if (relResults != null)
+                {
+                    foreach (IResultObject result in relResults)
+                    {
+                        //' Get display name for user
+                        string fullUserName = string.Empty;
+                        string userQuery = String.Format("SELECT * FROM SMS_R_User WHERE UniqueUserName = '{0}'", result["UniqueUserName"].StringValue.Replace("\\", "\\\\"));
+                        IResultObject userResults = connection.QueryProcessor.ExecuteQuery(userQuery);
+
+                        if (userResults != null)
+                        {
+                            foreach (IResultObject user in userResults)
+                            {
+                                fullUserName = user["FullUserName"].StringValue;
+                            }
+                        }
+
+                        //' Construct new relation object for return value
+                        CMUserDeviceRelation relation = new CMUserDeviceRelation()
+                        {
+                            CreationTime = result["CreationTime"].DateTimeValue,
+                            ResourceId = result["ResourceID"].StringValue,
+                            ResourceName = result["ResourceName"].StringValue,
+                            UniqueUserName = result["UniqueUserName"].StringValue,
+                            FullUserName = fullUserName
+                        };
+
+                        relations.Add(relation);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return relations;
+        }
+
         [WebMethod(Description = "Get primary device(s) for a specific user")]
-        public List<string> GetCMPrimaryDeviceByUser(string userName, string secret)
+        public List<string> GetCMPrimaryDeviceByUser(string secret, string userName)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -133,7 +192,7 @@ namespace ConfigMgrWebService
             if (secret == secretKey)
             {
                 //' Query for device relationship instances
-                SelectQuery relationQuery = new SelectQuery("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceName like '" + userName + "'");
+                SelectQuery relationQuery = new SelectQuery("SELECT * FROM SMS_UserMachineRelationship WHERE UniqueUserName like '" + userName + "'");
                 ManagementScope managementScope = new ManagementScope("\\\\" + siteServer + "\\root\\SMS\\site_" + siteCode);
                 managementScope.Connect();
                 ManagementObjectSearcher managementObjectSearcher = new ManagementObjectSearcher(managementScope, relationQuery);
@@ -154,7 +213,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Get deployed applications for a specific user")]
-        public List<CMApplication> GetCMDeployedApplicationsByUser(string userName, string secret)
+        public List<CMApplication> GetCMDeployedApplicationsByUser(string secret, string userName)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -234,7 +293,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Get deployed applications for a specific device")]
-        public List<string> GetCMDeployedApplicationsByDevice(string deviceName, string secret)
+        public List<string> GetCMDeployedApplicationsByDevice(string secret, string deviceName)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -544,11 +603,12 @@ namespace ConfigMgrWebService
                                 {
                                     //' Collect property values from instance
                                     string packageName = tsDeployment["PackageName"].StringValue;
+                                    string packageId = tsDeployment["PackageID"].StringValue;
                                     string advertId = tsDeployment["AdvertisementId"].StringValue;
                                     int advertFlags = tsDeployment["AdvertFlags"].IntegerValue;
 
                                     //' Construct taskSequence object
-                                    CMTaskSequence ts = new CMTaskSequence { AdvertFlags = advertFlags, AdvertisementId = advertId, PackageName = packageName };
+                                    CMTaskSequence ts = new CMTaskSequence { AdvertFlags = advertFlags, AdvertisementId = advertId, PackageName = packageName, PackageID = packageId };
 
                                     //' Add object to list if hidden deployment bit exists
                                     if ((advertFlags & 0x20000000) != 0)
@@ -567,7 +627,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Get Boot Image source version")]
-        public string GetCMBootImageSourceVersion(string packageId, string secret)
+        public string GetCMBootImageSourceVersion(string secret, string packageId)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -630,7 +690,7 @@ namespace ConfigMgrWebService
                 }
                 catch (Exception ex)
                 {
-                    WriteEventLog(String.Format("An error occured when an attempt to query for user data from SMS Provider was made. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    WriteEventLog(String.Format("An error occured when an attempt to query for user data from SMS Provider. Error message: {0}", ex.Message), EventLogEntryType.Error);
                 }
                 
                 try
@@ -666,7 +726,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Get the unique username for a specific user (useful for setting a value for SMSTSUdaUsers)")]
-        public string GetCMUniqueUserName(string userName, string secret)
+        public string GetCMUniqueUserName(string secret, string userName)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -746,7 +806,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Import a computer by MAC Address")]
-        public string ImportCMComputerByMacAddress(string computerName, string macAddress, string secret)
+        public string ImportCMComputerByMacAddress(string secret, string computerName, string macAddress)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -774,7 +834,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Import a computer by UUID (SMBIOS GUID)")]
-        public string ImportCMComputerByUUID(string computerName, string uuid, string secret)
+        public string ImportCMComputerByUUID(string secret, string computerName, string uuid)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -806,7 +866,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Add a computer to a specific device collection (creates a direct membership rule)")]
-        public bool AddCMComputerToCollection(string resourceName, string collectionName, string secret)
+        public bool AddCMComputerToCollection(string secret, string resourceName, string collectionId)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -829,7 +889,7 @@ namespace ConfigMgrWebService
                     WqlResultObject collection = null;
 
                     //' Attempt to get collection
-                    string query = String.Format("SELECT * FROM SMS_Collection WHERE Name LIKE '{0}' AND CollectionType = 2", collectionName);
+                    string query = String.Format("SELECT * FROM SMS_Collection WHERE CollectionID LIKE '{0}' AND CollectionType = 2", collectionId);
                     WqlQueryResultsObject collResult = (WqlQueryResultsObject)connection.QueryProcessor.ExecuteQuery(query);
 
                     if (collResult != null)
@@ -869,13 +929,13 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Get all or a filtered list of device collections")]
-        public List<string> GetCMDeviceCollections(string secret, string filter = null)
+        public List<CMCollection> GetCMDeviceCollections(string secret, string filter = null)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
 
             //' Construct list object
-            List<string> collectionList = new List<string>();
+            List<CMCollection> collectionList = new List<CMCollection>();
 
             //' Validate secret key
             if (secret == secretKey)
@@ -901,7 +961,12 @@ namespace ConfigMgrWebService
                 {
                     foreach (IResultObject collection in collections)
                     {
-                        collectionList.Add(collection["Name"].StringValue);
+                        CMCollection coll = new CMCollection
+                        {
+                            Name = collection["Name"].StringValue,
+                            CollectionID = collection["CollectionID"].StringValue
+                        };
+                        collectionList.Add(coll);
                     }
                 }
             }
@@ -1161,7 +1226,7 @@ namespace ConfigMgrWebService
             return records;
         }
 
-        [WebMethod(Description = "Remove a device from a specific collection (only for Direct Membership rules")]
+        [WebMethod(Description = "Remove a device from a specific collection (only for Direct Membership rules)")]
         public bool RemoveCMDeviceFromCollection(string secret, string deviceName, string collectionId)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
@@ -1481,6 +1546,96 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Get all collections a specific device is a member of by device name")]
+        public List<CMCollection> GetCMCollectionsForDeviceByName(string secret, string deviceName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            List<CMCollection> returnValue = new List<CMCollection>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get resource
+                CMResource resource = GetCMResource(deviceName, CMObjectType.System, CMResourceProperty.Name);
+
+                //' Get all collections for device
+                string query = String.Format("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID = {0} AND ResourceType = {1:D}", resource.ResourceID, CMObjectType.System);
+                IResultObject collections = connection.QueryProcessor.ExecuteQuery(query);
+
+                if (collections != null)
+                {
+                    foreach (IResultObject collection in collections)
+                    {
+                        //' Construct new collection object
+                        CMCollection coll = new CMCollection();
+
+                        //' Get collection name from collection ID
+                        IResultObject collInstance = GetCMCollection(collection["CollectionID"].StringValue, CMCollectionType.DeviceCollection);
+
+                        //' Add properties to collection object
+                        coll.CollectionID = collection["CollectionID"].StringValue;
+                        coll.Name = collInstance["Name"].StringValue;
+                        returnValue.Add(coll);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get all collections a specific device is a member of by ResourceID")]
+        public List<CMCollection> GetCMCollectionsForDeviceByResourceID(string secret, string resourceId)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            List<CMCollection> returnValue = new List<CMCollection>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get resource
+                CMResource resource = GetCMResource(resourceId, CMObjectType.System, CMResourceProperty.ResourceID);
+
+                //' Get all collections for device
+                string query = String.Format("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID = {0} AND ResourceType = {1:D}", resource.ResourceID, CMObjectType.System);
+                IResultObject collections = connection.QueryProcessor.ExecuteQuery(query);
+
+                if (collections != null)
+                {
+                    foreach (IResultObject collection in collections)
+                    {
+                        //' Construct new collection object
+                        CMCollection coll = new CMCollection();
+
+                        //' Get collection name from collection ID
+                        IResultObject collInstance = GetCMCollection(collection["CollectionID"].StringValue, CMCollectionType.DeviceCollection);
+
+                        //' Add properties to collection object
+                        coll.CollectionID = collection["CollectionID"].StringValue;
+                        coll.Name = collInstance["Name"].StringValue;
+                        returnValue.Add(coll);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
         [WebMethod(Description = "Get all applications and filter by administrative category")]
         public List<CMApplication> GetCMApplicationByCategory(string secret, string categoryName)
         {
@@ -1517,6 +1672,177 @@ namespace ConfigMgrWebService
 
             MethodEnd(method);
             return appList;
+        }
+
+        [WebMethod(Description = "Get all applications or a filtered list")]
+        public List<CMApplication> GetCMApplication(string secret, string filter)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            List<CMApplication> appList = new List<CMApplication>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Determine query for application objects
+                string appQuery = null;
+                if (!String.IsNullOrEmpty(filter))
+                {
+                    appQuery = String.Format("SELECT * FROM SMS_ApplicationLatest WHERE (IsHidden = 0) AND (LocalizedDisplayName = '{0}')", filter);
+                }
+                else
+                {
+                    appQuery = "SELECT * FROM SMS_ApplicationLatest WHERE (IsHidden = 0)";
+                }
+
+                //' Get applications objects
+                IResultObject appInstances = connection.QueryProcessor.ExecuteQuery(appQuery);
+
+                if (appInstances != null)
+                {
+                    foreach (IResultObject app in appInstances)
+                    {
+                        //' Construct a new CMApplication object
+                        CMApplication application = new CMApplication();
+
+                        //' Assign properties to CMApplication object from query result and add object to list
+                        application.ApplicationName = app["LocalizedDisplayName"].StringValue;
+                        application.ApplicationDescription = app["LocalizedDescription"].StringValue;
+                        application.ApplicationManufacturer = app["Manufacturer"].StringValue;
+                        application.ApplicationVersion = app["SoftwareVersion"].StringValue;
+                        application.ApplicationCreated = app["DateCreated"].DateTimeValue;
+                        application.ApplicationExecutionContext = app["ExecutionContext"].StringValue;
+                        appList.Add(application);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return appList;
+        }
+
+        [WebMethod(Description = "Remove all primary user relations for a specific device by resource id")]
+        public int RemoveCMPrimaryUserByDeviceResourceId(string secret, string resourceId)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            int returnValue = 0;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get primary user relations for device resource id
+                string relQuery = String.Format("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceID = '{0}'", resourceId);
+                IResultObject relResult = connection.QueryProcessor.ExecuteQuery(relQuery);
+
+                if (relResult != null)
+                {
+                    foreach (IResultObject relation in relResult)
+                    {
+                        try
+                        {
+                            //' Delete relation instance
+                            relation.Delete();
+                            returnValue++;
+                            WriteEventLog(String.Format("Successfully removed primary user relation for ResourceID '{0}': {1}", resourceId, relation["UniqueUserName"].StringValue), EventLogEntryType.Information);
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteEventLog(String.Format("Unable to remove primary user relation for ResourceID '{1}' with user name '{2}'. Error message: {0}", ex.Message, resourceId, relation["UniqueUserName"].StringValue), EventLogEntryType.Warning);
+                        }
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Find the first available number from computer name")]
+        public string GetCMFirstAvailableNameSequence(string secret, int suffixLength, string computerNamefilter)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = null;
+
+            //' Create list for suffix numbers for all computers or those matching the filter
+            List<int> suffixList = new List<int>();
+
+            string suffixMask = null;
+            switch (suffixLength)
+            {
+                case 1:
+                    suffixMask = "0";
+                    break;
+                case 2:
+                    suffixMask = "00";
+                    break;
+                case 3:
+                    suffixMask = "000";
+                    break;
+            }
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Determine query for computer objects
+                string resQuery = null;
+                if (!String.IsNullOrEmpty(computerNamefilter))
+                {
+                    resQuery = String.Format("SELECT * FROM SMS_R_System WHERE Name like '%{0}%'", computerNamefilter);
+                }
+                else
+                {
+                    resQuery = "SELECT * FROM SMS_R_System";
+                }
+
+                //' Get all computer objects suffix sequence
+                IResultObject resResult = connection.QueryProcessor.ExecuteQuery(resQuery);
+                if (resResult != null)
+                {
+                    try
+                    {
+                        foreach (IResultObject res in resResult)
+                        {
+                            int nameLength = res["Name"].StringValue.Length;
+                            int nameNumber = int.Parse(res["Name"].StringValue.Substring(nameLength - suffixLength));
+                            suffixList.Add(nameNumber);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("Unable to parse computer name suffix from string to integer. Error message: {0}", ex.Message), EventLogEntryType.Warning);
+                    }
+                }
+
+                //' Locate next available number in the suffix sequence
+                if (suffixList.Count >= 1)
+                {
+                    int missingNumber = FindMissingNumber(suffixList);
+                    returnValue = missingNumber.ToString(suffixMask);
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Move a computer in Active Directory to a specific organizational unit")]
@@ -1667,8 +1993,8 @@ namespace ConfigMgrWebService
                     {
                         //' Check if computer is member of group
                         DirectoryEntry groupEntry = new DirectoryEntry(groupDistinguishedName);
-                        bool memberOf = groupEntry.Properties["member"].Contains(computerDistinguishedName);
-
+                        List<string> groupMembers = GetADGroupMemberList(groupEntry);
+                        bool memberOf = groupMembers.Contains(computerDistinguishedName);
                         if (memberOf == true)
                         {
                             //' Remove computer from group and commit
@@ -1685,6 +2011,69 @@ namespace ConfigMgrWebService
                     {
                         WriteEventLog(String.Format("An error occured when attempting to remove a computer object in Active Directory from a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
                     }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get all members of an Active Directory group")]
+        public List<string> GetADGroupMembers(string secret, string groupName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Set return value variable
+            List<string> returnValue = new List<string>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get AD group object
+                string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
+
+                if (!String.IsNullOrEmpty(groupDistinguishedName))
+                {
+                    try
+                    {
+                        DirectoryEntry groupEntry = new DirectoryEntry(groupDistinguishedName);
+                        returnValue = GetADGroupMemberList(groupEntry);
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when retrieving Active Directory group members. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get Active Directory groups for a specific user")]
+        public List<ADGroup> GetADGroupsByUser(string secret, string userName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Set return value variable
+            List<ADGroup> returnValue = new List<ADGroup>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get AD user object
+                string userDistinguishedName = GetADObject(userName, ADObjectClass.User, ADObjectType.distinguishedName);
+
+                //' Get AD groups for user distinguished name
+                ArrayList groupMemberships = new ArrayList();
+                ArrayList groups = GetADAttributeValues("memberOf", userDistinguishedName, groupMemberships, true);
+
+                foreach (string group in groups)
+                {
+                    string attributeValue = GetADAttributeValue(group, "samAccountName");
+                    returnValue.Add(new ADGroup() { DistinguishedName = group, samAccountName = attributeValue });
                 }
             }
 
@@ -1760,6 +2149,221 @@ namespace ConfigMgrWebService
 
             MethodEnd(method);
             return siteName;
+        }
+
+        [WebMethod(Description = "Validates if user is a member of a specific group")]
+        public bool GetADGroupMemberByUser(string secret, string userName, string groupName, string domain)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Instatiate return value variable
+            bool memberState = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Check if user is member of group
+                using (PrincipalContext context = new PrincipalContext(ContextType.Domain, domain))
+                using (UserPrincipal user = UserPrincipal.FindByIdentity(context, userName))
+                using (GroupPrincipal group = GroupPrincipal.FindByIdentity(context, groupName))
+                {
+                    if (user != null)
+                    {
+                        WriteEventLog("Successfully located user object", EventLogEntryType.Information);
+                        if (group != null)
+                        {
+                            WriteEventLog("Successfully located group object", EventLogEntryType.Information);
+
+                            //' Check if user is member of group from param value, also check nested groups
+                            memberState = GetADGroupNestedMemberOf(user, group);
+                        }
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return memberState;
+        }
+
+        [WebMethod(Description = "Check if a computer object exists in Active Directory")]
+        public ADComputer GetADComputer(string secret, string computerName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Instatiate return value variable
+            ADComputer returnValue = new ADComputer();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Set empty value for search result
+                SearchResult searchResult = null;
+                DirectoryEntry directoryObject = null;
+
+                //' Get default naming context of current domain
+                string defaultNamingContext = GetADDefaultNamingContext();
+                string currentDomain = String.Format("LDAP://{0}", defaultNamingContext);
+
+                //' Construct directory entry for directory searcher
+                DirectoryEntry domain = new DirectoryEntry(currentDomain);
+                DirectorySearcher directorySearcher = new DirectorySearcher(domain);
+                directorySearcher.Filter = String.Format("(&(objectClass=computer)((sAMAccountName={0}$)))", computerName);
+                directorySearcher.PropertiesToLoad.Add("distinguishedName");
+                directorySearcher.PropertiesToLoad.Add("sAMAccountName");
+                directorySearcher.PropertiesToLoad.Add("cn");
+                directorySearcher.PropertiesToLoad.Add("dNSHostName");
+
+                //' Invoke directory searcher
+                try
+                {
+                    searchResult = directorySearcher.FindOne();
+                    if (searchResult != null)
+                    {
+                        //' Get computer object from search result
+                        directoryObject = searchResult.GetDirectoryEntry();
+
+                        if (directoryObject != null)
+                        {
+                            returnValue.SamAccountName = (string)directoryObject.Properties["sAMAccountName"].Value;
+                            returnValue.CanonicalName = (string)directoryObject.Properties["cn"].Value;
+                            returnValue.DistinguishedName = (string)directoryObject.Properties["distinguishedName"].Value;
+                            returnValue.DnsHostName = (string)directoryObject.Properties["dNSHostName"].Value;
+
+                            // Dispose directory object
+                            directoryObject.Dispose();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog(String.Format("An error occured when attempting to locate Active Directory object. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                }
+
+                //' Dispose objects
+                directorySearcher.Dispose();
+                domain.Dispose();
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Remove a computer object from Active Directory (Prohibits removal of domain controllers)")]
+        public bool RemoveADComputer(string secret, string samAccountName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Instatiate return value variable
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Construct list for all domain controllers
+                List<string> domainControllers = new List<string>();
+
+                //' Configure domain context
+                Domain currentDomain = Domain.GetCurrentDomain();
+                PrincipalContext principalContext = new PrincipalContext(ContextType.Domain, currentDomain.Name, null, ContextOptions.Negotiate);
+
+                //' Get a list of all domain controllers in the current domain
+                try
+                {
+                    foreach (DomainController domainController in currentDomain.DomainControllers)
+                    {
+                        //' Add domain controller distinguished name to list
+                        DirectoryEntry domainControllerEntry = domainController.GetDirectoryEntry();
+                        string domainControllerName = (string)domainControllerEntry.Properties["name"].Value;
+                        ComputerPrincipal dcPrincipal = ComputerPrincipal.FindByIdentity(principalContext, IdentityType.Name, domainControllerName);
+                        domainControllers.Add(dcPrincipal.DistinguishedName);
+
+                        //' Dispose objects
+                        domainControllerEntry.Dispose();
+                        dcPrincipal.Dispose();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog("Unable to detect domain controllers in current domain.", EventLogEntryType.Error);
+                    returnValue = false;
+                }
+
+                if (domainControllers.Count >= 1)
+                {
+                    //' Get computer principal eligible for removal
+                    ComputerPrincipal computerPrincipal = ComputerPrincipal.FindByIdentity(principalContext, samAccountName);
+
+                    if (computerPrincipal != null)
+                    {
+                        if (domainControllers.Contains(computerPrincipal.DistinguishedName) == false)
+                        {
+                            try
+                            {
+                                //' Delete computer object including any leaf objects
+                                DirectoryEntry subEntry = (DirectoryEntry)computerPrincipal.GetUnderlyingObject();
+
+                                if (subEntry != null)
+                                {
+                                    subEntry.DeleteTree();
+                                    subEntry.CommitChanges();
+
+                                    WriteEventLog(String.Format("Successfully removed computer object named '{0}'", computerPrincipal.Name), EventLogEntryType.Information);
+                                }
+
+                                //' Dispose object
+                                subEntry.Dispose();
+
+                                returnValue = true;
+                            }
+                            catch (Exception ex)
+                            {
+                                WriteEventLog(String.Format("Unable to remove computer object '{0}'. Error message: {1}", samAccountName, ex.Message), EventLogEntryType.Error);
+                                returnValue = false;
+                            }
+                        }
+
+                        //' Dispose object
+                        computerPrincipal.Dispose();
+                    }
+                    else
+                    {
+                        WriteEventLog(String.Format("Unable to find a computer object named '{0}'", computerPrincipal.Name), EventLogEntryType.Information);
+                    }
+                }
+
+                //' Dispose objects
+                currentDomain.Dispose();
+                principalContext.Dispose();
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Write event to web service log")]
+        public bool NewCWEventLogEntry(string secret, string value)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Instatiate return value variable
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log user attempted to invoke deployment
+                WriteEventLog(String.Format("{0}", value), EventLogEntryType.Information);
+            }
+
+            MethodEnd(method);
+            return returnValue;
         }
 
         [WebMethod(Description = "Get MDT roles from database (Application Pool identity needs access permissions to the specified MDT database)")]
@@ -1983,7 +2587,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Get a list of MDT roles for a specific computer")]
-        public List<string> GetMDTComputerRoleMembership(string id, string secret)
+        public List<string> GetMDTComputerRoleMembership(string secret, string id)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -2067,7 +2671,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Add computer identified by an asset tag to a specific MDT role")]
-        public bool AddMDTRoleMemberByAssetTag(string roleName, string computerName, string assetTag, string secret, bool createComputer, string identity = null)
+        public bool AddMDTRoleMemberByAssetTag(string secret, string roleName, string computerName, string assetTag, bool createComputer, string identity = null)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -2099,7 +2703,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Add computer identified by a serial number to a specific MDT role")]
-        public bool AddMDTRoleMemberBySerialNumber(string roleName, string computerName, string serialNumber, string secret, bool createComputer, string identity = null)
+        public bool AddMDTRoleMemberBySerialNumber(string secret, string roleName, string computerName, string serialNumber, bool createComputer, string identity = null)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -2132,7 +2736,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Add computer identified by a MAC address to a specific MDT role")]
-        public bool AddMDTRoleMemberByMacAddress(string roleName, string computerName, string macAddress, string secret, bool createComputer, string identity = null)
+        public bool AddMDTRoleMemberByMacAddress(string secret, string roleName, string computerName, string macAddress, bool createComputer, string identity = null)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -2164,7 +2768,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Add computer identified by an UUID to a specific MDT role")]
-        public bool AddMDTRoleMemberByUUID(string roleName, string computerName, string uuid, string secret, bool createComputer, string identity = null)
+        public bool AddMDTRoleMemberByUUID(string secret, string roleName, string computerName, string uuid, bool createComputer, string identity = null)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -2196,7 +2800,7 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Add computer to a given MDT role (supports multiple indentification types)")]
-        public bool AddMDTRoleMember(string computerName, string role, string secret, string assetTag = null, string serialNumber = null, string macAddress = null, string uuid = null, string description = null)
+        public bool AddMDTRoleMember(string secret, string computerName, string role, string assetTag = null, string serialNumber = null, string macAddress = null, string uuid = null, string description = null)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
@@ -2237,6 +2841,83 @@ namespace ConfigMgrWebService
             }
 
             MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Remove MDT computer from all associated roles")]
+        public bool RemoveMDTComputerByMacAddress(string secret, string macAddress)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get computer identity from in param value
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                string identity = GetMDTComputerIdentity(connectionString, "MacAddress", macAddress);
+
+                if (!String.IsNullOrEmpty(identity))
+                {
+                    returnValue = RemoveMDTComputer(connectionString, identity);
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        private bool RemoveMDTComputer(SqlConnectionStringBuilder connectionString, string identity)
+        {
+            //' Construct variable for return value
+            bool returnValue = false;
+
+            try
+            {
+                //' Connect to SQL server instance
+                SqlConnection connection = new SqlConnection();
+                connection.ConnectionString = connectionString.ConnectionString;
+                connection.Open();
+
+                //' Construct SQL statement
+                SqlCommand command = connection.CreateCommand();
+                StringBuilder sqlString = new StringBuilder();
+                sqlString.Append(String.Format("DELETE FROM ComputerIdentity WHERE ID like @ID"));
+
+                command.Parameters.Add("@ID", SqlDbType.NVarChar).Value = identity;
+                command.CommandText = sqlString.ToString();
+
+                //' Invoke SQL command to remove computer identity
+                try
+                {
+                    int rowsAffected = command.ExecuteNonQuery();
+                    if (rowsAffected >= 1)
+                    {
+                        //' Cleanup and disconnect SQL connection
+                        command.Dispose();
+                        connection.Close();
+
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog(String.Format("An error occured when attempting to computer identity from MDT database. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    return false;
+                }
+
+                //' Cleanup and disconnect SQL connection
+                command.Dispose();
+                connection.Close();
+            }
+            catch (SqlException ex)
+            {
+                WriteEventLog(String.Format("An error occured while connecting to SQL server hosting MDT database. Error message: {0}", ex.Message), EventLogEntryType.Error);
+            }
+
             return returnValue;
         }
 
@@ -2788,7 +3469,11 @@ namespace ConfigMgrWebService
                 {
                     foreach (string osImageId in osImageIds)
                     {
-                        string imageQuery = String.Format("SELECT * FROM SMS_ImageInformation WHERE PackageID like '{0}'", osImageId);
+                        //' Get the ImageIndex property from task sequence step
+                        IResultObject tsPackage = connection.GetInstance(String.Format("SMS_TaskSequencePackage.PackageID='{0}'", tsPackageId));
+                        string imageIndex = GetTSIndexSelection(tsPackage);
+
+                        string imageQuery = String.Format("SELECT * FROM SMS_ImageInformation WHERE PackageID like '{0}' AND Index like '{1}'", osImageId, imageIndex);
                         IResultObject osImageProps = connection.QueryProcessor.ExecuteQuery(imageQuery);
 
                         if (osImageProps != null)
@@ -2803,6 +3488,57 @@ namespace ConfigMgrWebService
             }
 
             return osPropertyList;
+        }
+
+        private string GetTSIndexSelection(IResultObject taskSequencePackage)
+        {
+            //' Connect to SMS Provider
+            SmsProvider smsProvider = new SmsProvider();
+            WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+            IResultObject taskSequence = null;
+
+            Dictionary<string, object> parameters = new Dictionary<string, object>();
+            parameters.Add("TaskSequencePackage", taskSequencePackage);
+
+            var outParams = connection.ExecuteMethod("SMS_TaskSequencePackage", "GetSequence", parameters);
+            taskSequence = outParams.GetSingleItem("TaskSequence");
+
+            string imageIndex = GetTSSteps(taskSequence);
+
+            return imageIndex;
+
+        }
+
+        private string GetTSSteps(IResultObject taskSequence)
+        {
+            List<IResultObject> tsSteps = taskSequence.GetArrayItems("Steps");
+
+            foreach (IResultObject step in tsSteps)
+            {
+                if (step["__CLASS"].StringValue == "SMS_TaskSequence_ApplyOperatingSystemAction")
+                {
+                    int imageIndex = step["ImageIndex"].IntegerValue;
+                    return imageIndex.ToString();
+                }
+
+                if (step["__CLASS"].StringValue == "SMS_TaskSequence_UpgradeOperatingSystemAction")
+                {
+                    int imageIndex = step["InstallEditionIndex"].IntegerValue;
+                    return imageIndex.ToString();
+                }
+
+                if (step["__CLASS"].StringValue == "SMS_TaskSequence_Group")
+                {
+                    string result = GetTSSteps(step);
+                    if (result != null)
+                    {
+                        return result;
+                    }
+                }
+            }
+
+            return null;
         }
 
         private string ImportCMComputer(Dictionary<string, object> methodParameters)
@@ -2903,6 +3639,9 @@ namespace ConfigMgrWebService
 
             switch (objectClass)
             {
+                case ADObjectClass.DomainController:
+                    directorySearcher.Filter = String.Format("(&(objectClass=computer)((dNSHostName={0})))", name);
+                    break;
                 case ADObjectClass.Computer:
                     directorySearcher.Filter = String.Format("(&(objectClass=computer)((sAMAccountName={0}$)))", name);
                     break;
@@ -2948,6 +3687,128 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        /// <summary>
+        ///  Code adjusted from: https://itq.nl/get-more-than-1500-members-from-an-active-directory-group/
+        /// </summary>
+        private List<string> GetADGroupMemberList(DirectoryEntry groupEntry)
+        {
+            //' Construct a list for housing all group members
+            List<string> groupMembers = new List<string>();
+
+            //' Define range variables
+            const int rangeIncrement = 999;
+            int rangeStart = 0;
+
+            //' Continue if there are atleast one member
+            if (groupEntry.Properties["member"].Count >= 1)
+            {
+                while (true)
+                {
+                    //' Define the end of the range
+                    int rangeEnd = rangeStart + rangeIncrement - 1;
+
+                    //' Attach a range option to the properties to load, for example: range=0-999.
+                    string[] properties = new[] { String.Format("member;range={0}-{1}", rangeStart, rangeEnd) };
+
+                    //' Perform a search using the group entry as the base
+                    string filter = "(objectClass=*)";
+                    using (DirectorySearcher memberSearcher = new DirectorySearcher(groupEntry, filter, properties, SearchScope.Base))
+                    {
+                        try
+                        {
+                            //' Find all members of the group
+                            SearchResultCollection memberResults = memberSearcher.FindAll();
+                            foreach (SearchResult memberResult in memberResults)
+                            {
+                                ResultPropertyCollection membersProperties = memberResult.Properties;
+                                IEnumerable<string> membersPropertyNames = membersProperties.PropertyNames.OfType<string>().Where(n => n.StartsWith("member;"));
+                                foreach (string propertyName in membersPropertyNames)
+                                {
+                                    //' Get all members from the ranged result
+                                    var members = membersProperties[propertyName];
+                                    foreach (string memberDn in members)
+                                    {
+                                        groupMembers.Add(memberDn);
+                                    }
+                                }
+                            }
+                        }
+                        catch (DirectoryServicesCOMException)
+                        {
+                            //' When the start of the range exceeds the number of available results, an exception is thrown and we exit the loop
+                            break;
+                        }
+                    }
+
+                    //' Increment for the next range
+                    rangeStart += rangeIncrement;
+                }
+            }
+
+            return groupMembers;
+        }
+
+        /// <summary>
+        ///     Check if user if member of a group including nested group - https://stackoverflow.com/questions/5312744/how-to-determine-all-the-groups-a-user-belongs-to-including-nested-groups-in-a/31725157#31725157
+        /// </summary>
+        private bool GetADGroupNestedMemberOf(Principal principal, GroupPrincipal group)
+        {
+            //' LDAP query for memberOf including nested
+            string filter = String.Format("(&(sAMAccountName={0})(memberOf:1.2.840.113556.1.4.1941:={1}))", principal.SamAccountName, group.DistinguishedName);
+            WriteEventLog(String.Format("Using LDAP filter for user validation: {0}", filter), EventLogEntryType.Information);
+
+            DirectorySearcher searcher = new DirectorySearcher(filter);
+            SearchResult result = searcher.FindOne();
+
+            return result != null;
+        }
+
+        private ArrayList GetADAttributeValues(string attributeName, string distinguishedName, ArrayList valuesCollection, bool recursive)
+        {
+            //' Construct directory entry for object
+            DirectoryEntry directoryEntry = new DirectoryEntry(distinguishedName);
+
+            //' Add properties for value collection
+            PropertyValueCollection ValueCollection = directoryEntry.Properties[attributeName];
+            IEnumerator enumerator = ValueCollection.GetEnumerator();
+
+            while (enumerator.MoveNext())
+            {
+                if (enumerator.Current != null)
+                {
+                    if (!valuesCollection.Contains(enumerator.Current.ToString()))
+                    {
+                        valuesCollection.Add(enumerator.Current.ToString());
+                        if (recursive)
+                        {
+                            GetADAttributeValues(attributeName, "LDAP://" + enumerator.Current.ToString(), valuesCollection, true);
+                        }
+                    }
+                }
+            }
+
+            //' Dispose objects
+            directoryEntry.Close();
+            directoryEntry.Dispose();
+
+            return valuesCollection;
+        }
+
+        private string GetADAttributeValue(string distinguishedName, string attributeName)
+        {
+            //' Construct return value variable
+            string returnValue = null;
+
+            //' Get attribute value
+            DirectoryEntry directoryEntry = new DirectoryEntry(String.Format("LDAP://{0}", distinguishedName));
+            returnValue = (string)directoryEntry.Properties[attributeName].Value;
+
+            //' Dispose objects
+            directoryEntry.Dispose();
+
+            return returnValue;
+        }
+
         public static Dictionary<string, string> GetADSubnets(string forestName)
         {
             //' Construct dictionary to hold detected subnets
@@ -2976,6 +3837,64 @@ namespace ConfigMgrWebService
             }
 
             return subnetList;
+        }
+
+        private static int FindMissingNumber(List<int> list)
+        {
+            //' Missing number return value
+            int firstMissingNumber = 0;
+
+            //' Sorting the list
+            list.Sort();
+
+            //' First number of the list
+            int firstNumber = list.First();
+
+            //' Last number of the list
+            int lastNumber = list.Last();
+
+            //' Range that contains all numbers in the interval
+            IEnumerable<int> range = Enumerable.Range(firstNumber, lastNumber - firstNumber);
+
+            if (range.Contains<int>(1) == false)
+            {
+                firstMissingNumber = 1;
+            }
+            else
+            {
+                if (range != null)
+                {
+                    //' Getting the set difference
+                    IEnumerable<int> setDifference = range.Except(list);
+                    if (!IsNullOrEmpty<int>(setDifference))
+                    {
+                        firstMissingNumber = range.Except(list).First();
+                    }
+                    else
+                    {
+                        firstMissingNumber = FindNextNumber(list);
+                    }
+                }
+            }
+
+            return firstMissingNumber;
+        }
+
+        private static int FindNextNumber(List<int> list)
+        {
+            //' Sorting the list
+            list.Sort();
+
+            //' Next number of the list
+            int lastNumber = list.Last<int>();
+            int nextNumber = lastNumber + 1;
+
+            return nextNumber;
+        }
+
+        public static bool IsNullOrEmpty<T>(IEnumerable<T> enumerable)
+        {
+            return enumerable == null || !enumerable.Any();
         }
 
         private static string GetUserHostAddress()
@@ -3009,6 +3928,20 @@ namespace ConfigMgrWebService
             timer.Reset();
 
             return timeSpan;
+        }
+
+        private string ConvertFromSecureString(SecureString secureString)
+        {
+            IntPtr unsecureString = IntPtr.Zero;
+            try
+            {
+                unsecureString = Marshal.SecureStringToGlobalAllocUnicode(secureString);
+                return Marshal.PtrToStringUni(unsecureString);
+            }
+            finally
+            {
+                Marshal.ZeroFreeGlobalAllocUnicode(unsecureString);
+            }
         }
 
         public static void WriteEventLog(string logEntry, EventLogEntryType entryType)

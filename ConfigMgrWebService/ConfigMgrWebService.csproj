@@ -24,6 +24,7 @@
     <UseGlobalApplicationHostFile />
     <NuGetPackageImportStamp>
     </NuGetPackageImportStamp>
+    <Use64BitIISExpress />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -55,6 +56,7 @@
     </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.DirectoryServices" />
+    <Reference Include="System.DirectoryServices.AccountManagement" />
     <Reference Include="System.Management" />
     <Reference Include="System.Numerics" />
     <Reference Include="System.Web.DynamicData" />
@@ -88,9 +90,12 @@
     <Content Include="ConfigMgrWebService.asmx" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ADComputer.cs" />
+    <Compile Include="ADGroup.cs" />
     <Compile Include="CMApplication.cs" />
     <Compile Include="CMCollection.cs" />
     <Compile Include="CMResource.cs" />
+    <Compile Include="CMUserDeviceRelation.cs" />
     <Compile Include="IPAddresses.cs" />
     <Compile Include="MDTRole.cs" />
     <Compile Include="CMPackage.cs" />
