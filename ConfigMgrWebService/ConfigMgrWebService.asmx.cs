@@ -2844,7 +2844,7 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
-        [WebMethod(Description = "Remove MDT computer from all associated roles")]
+        [WebMethod(Description = "Remove MDT computer identity by MacAddress")]
         public bool RemoveMDTComputerByMacAddress(string secret, string macAddress)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
