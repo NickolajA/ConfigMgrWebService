@@ -449,6 +449,40 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Get the Device Name of a specific ResourceID")]
+        public string GetCMDeviceNameByResourceID(string secret, string resourceid)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Query for device name
+                string query = String.Format("SELECT * FROM SMS_R_System WHERE RESOURCEID like '{0}'", resourceid);
+                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                if (result != null)
+                {
+                    foreach (IResultObject device in result)
+                    {
+                        returnValue = device["Name"].StringValue;
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+
         [WebMethod(Description = "Get resource id for device by MAC Address")]
         public string GetCMDeviceResourceIDByMACAddress(string secret, string macAddress)
         {
@@ -546,6 +580,39 @@ namespace ConfigMgrWebService
                     foreach (IResultObject device in result)
                     {
                         returnValue = device["Name"].StringValue;
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get the name of a specific device by UUID (SMBIOS GUID)")]
+        public string GetCMDeviceUUIDByName(string secret, string name)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Query for device name
+                string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like '{0}'", name);
+                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                if (result != null)
+                {
+                    foreach (IResultObject device in result)
+                    {
+                        returnValue = device["SMBIOSGUID"].StringValue;
                     }
                 }
             }
@@ -3565,7 +3632,7 @@ namespace ConfigMgrWebService
             }
         }
 
-        private string GetCMCompterResourceId(string computerName)
+        private string GetCMComputerResourceId(string computerName)
         {
             //' Connect to SMS Provider
             SmsProvider smsProvider = new SmsProvider();
