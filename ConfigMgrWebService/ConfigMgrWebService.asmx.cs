@@ -975,7 +975,7 @@ namespace ConfigMgrWebService
             return collectionList;
         }
 
-        [WebMethod(Description = "Get collection variable for filter device collection or all collections")]
+        [WebMethod(Description = "Get collection variable for filtered device collection or all collections")]
         public List<CMCollectionVariables> GetCMCollectionVariableByName(string secret, CMCollectionType collectiontype, string[] filter = null)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
@@ -1057,7 +1057,7 @@ namespace ConfigMgrWebService
             return collectionList;
         }
 
-        [WebMethod(Description = "Get collection variable for filter device collection or all collections")]
+        [WebMethod(Description = "Get collection variable for filtered device collection or all collections")]
         public List<CMVariablesSettings> GetCMCollectionVariableByID(string secret, string[] filter = null)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
@@ -1117,7 +1117,7 @@ namespace ConfigMgrWebService
             return collectionList;
         }
 
-        [WebMethod(Description = "Get SCCM Console device collection Folder Structure")]
+        [WebMethod(Description = "Get all object in sccm console node.")]
         public List<CMNode> GetCMNodeObjects(string secret, CMNodeObjectType objecttype = CMNodeObjectType.SMS_Collection_Device)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
