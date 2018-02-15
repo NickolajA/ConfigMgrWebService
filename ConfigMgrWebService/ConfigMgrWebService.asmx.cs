@@ -1016,8 +1016,6 @@ namespace ConfigMgrWebService
                     };
                     collectionList.Add(tmpobj);
                     collectionIDfilter.Add(tmpobj.CollectionID);
-                    //collectionIDfilter.Add(tmpcollection["CollectionID"].StringValue);
-
                 }
 
                 if (collectionIDfilter != null || collectionIDfilter.All(item => string.IsNullOrEmpty(item)))
