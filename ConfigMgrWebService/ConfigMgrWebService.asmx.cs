@@ -19,6 +19,7 @@ using System.DirectoryServices.AccountManagement;
 using System.Net;
 using System.Security;
 using System.Runtime.InteropServices;
+using System.Xml.Serialization;
 
 namespace ConfigMgrWebService
 {
@@ -1111,6 +1112,296 @@ namespace ConfigMgrWebService
                     collectionList.Add(collectionsproperties);
                 }
 
+            }
+
+            MethodEnd(method);
+            return collectionList;
+        }
+
+        [WebMethod(Description = "Get collection variable and adhesion rule for filtered collection or all collections")]
+        [XmlInclude(typeof(CMQueryRule))]
+        [XmlInclude(typeof(CMDirectRule))]
+        [XmlInclude(typeof(CMIncludeRule))]
+        [XmlInclude(typeof(CMExcludeRule))]
+        public List<CMCollectionAdvanced> GetCMCollectionAdvancedByName(string secret, CMCollectionType collectiontype, string[] filter = null)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct list object
+            List<CMCollectionAdvanced> collectionList = new List<CMCollectionAdvanced>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                string collectionQuery = string.Empty;
+                string collectionsettingsQuery = string.Empty;
+
+                if (filter == null || filter.All(item => string.IsNullOrEmpty(item)))
+                {
+                    collectionQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType='{0:D}'", collectiontype);
+                }
+                else
+                {
+                    collectionQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType='{0:D}' AND Name LIKE '%{1}%'", collectiontype, string.Join("%' OR Name LIKE '%", filter));
+                }
+
+                IResultObject tmpcollections = connection.QueryProcessor.ExecuteQuery(collectionQuery);
+
+                List<string> collectionIDfilter = new List<string>();
+                ArrayList tmpcollectionList = new ArrayList();
+                foreach (IResultObject tmpcollection in tmpcollections)
+                {
+                    tmpcollectionList.Add(tmpcollection);
+                    collectionIDfilter.Add(tmpcollection["CollectionID"].StringValue);
+                }
+
+                if (collectionIDfilter != null || collectionIDfilter.All(item => string.IsNullOrEmpty(item)))
+                {
+                    collectionsettingsQuery = String.Format("SELECT * FROM SMS_CollectionSettings WHERE CollectionID IN ('{0}')", string.Join("','", collectionIDfilter));
+                    IResultObject collectionsSettings = connection.QueryProcessor.ExecuteQuery(collectionsettingsQuery);
+                    List<CMVariablesSettings> collectionssettings = new List<CMVariablesSettings>();
+                    foreach (IResultObject collectionsettings in collectionsSettings)
+                    {
+                        collectionsettings.Get();
+                        List<CMVariables> allvariables = new List<CMVariables>();
+                        if (collectionsettings["CollectionVariables"].ObjectValue != null)
+                        {
+
+                            foreach (IResultObject varobject in collectionsettings.GetArrayItems("CollectionVariables"))
+                            {
+                                CMVariables tmpvar = new CMVariables
+                                {
+                                    Name = varobject["Name"].StringValue,
+                                    Value = varobject["Value"].StringValue
+                                };
+                                allvariables.Add(tmpvar);
+                            }
+                        }
+
+                        CMVariablesSettings collectionsproperties = new CMVariablesSettings
+                        {
+                            CollectionID = collectionsettings["CollectionID"].StringValue,
+                            Variable = allvariables
+                        };
+                        collectionssettings.Add(collectionsproperties);
+                    }
+
+                    foreach (IResultObject tmpcollectionlist in tmpcollectionList)
+                    {
+                        tmpcollectionlist.Get();
+                        ArrayList collectionrulelist = new ArrayList();
+                        if (tmpcollectionlist["CollectionRules"].ObjectValue != null)
+                        {
+                            foreach (IResultObject collectionrule in tmpcollectionlist.GetArrayItems("CollectionRules"))
+                            {
+                                if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleQuery")
+                                {
+                                    CMQueryRule tmpcollectionrule = new CMQueryRule
+                                    {
+                                        RuleType = collectionrule["__CLASS"].StringValue,
+                                        RuleName = collectionrule["RuleName"].StringValue,
+                                        QueryID = collectionrule["QueryID"].StringValue,
+                                        QueryExpression = collectionrule["QueryExpression"].StringValue
+                                    };
+                                    collectionrulelist.Add(tmpcollectionrule);
+                                }
+                                else if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleDirect")
+                                {
+                                    CMDirectRule tmpcollectionrule = new CMDirectRule
+                                    {
+                                        RuleType = collectionrule["__CLASS"].StringValue,
+                                        RuleName = collectionrule["RuleName"].StringValue,
+                                        ResourceClassName = collectionrule["ResourceClassName"].StringValue,
+                                        ResourceID = collectionrule["ResourceID"].StringValue
+                                    };
+                                    collectionrulelist.Add(tmpcollectionrule);
+                                }
+                                else if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleIncludeCollection")
+                                {
+                                    CMIncludeRule tmpcollectionrule = new CMIncludeRule
+                                    {
+                                        RuleType = collectionrule["__CLASS"].StringValue,
+                                        RuleName = collectionrule["RuleName"].StringValue,
+                                        IncludeCollectionID = collectionrule["IncludeCollectionID"].StringValue
+                                    };
+                                    collectionrulelist.Add(tmpcollectionrule);
+                                }
+                                else
+                                {
+                                    CMExcludeRule tmpcollectionrule = new CMExcludeRule
+                                    {
+                                        RuleType = collectionrule["__CLASS"].StringValue,
+                                        RuleName = collectionrule["RuleName"].StringValue,
+                                        ExcludeCollectionID = collectionrule["ExcludeCollectionID"].StringValue
+                                    };
+                                    collectionrulelist.Add(tmpcollectionrule);
+                                }
+                            }
+                        }
+
+                        foreach (CMVariablesSettings collsetting in collectionssettings)
+                        {
+                            if (collsetting.CollectionID == tmpcollectionlist["CollectionID"].StringValue)
+                            {
+                                CMCollectionAdvanced tmpcollectionadvanced = new CMCollectionAdvanced
+                                {
+                                    Name = tmpcollectionlist["Name"].StringValue,
+                                    CollectionID = tmpcollectionlist["CollectionID"].StringValue,
+                                    Variable = collsetting.Variable,
+                                    AdhesionRules = collectionrulelist
+                                };
+                                collectionList.Add(tmpcollectionadvanced);
+                            }
+                        }
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return collectionList;
+        }
+
+        [WebMethod(Description = "Get collection variable and adhesion rule for filtered collection or all collections")]
+        [XmlInclude(typeof(CMQueryRule))]
+        [XmlInclude(typeof(CMDirectRule))]
+        [XmlInclude(typeof(CMIncludeRule))]
+        [XmlInclude(typeof(CMExcludeRule))]
+        public List<CMCollectionAdvanced> GetCMCollectionAdvancedByID(string secret, CMCollectionType collectiontype, string[] filter = null)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct list object
+            List<CMCollectionAdvanced> collectionList = new List<CMCollectionAdvanced>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                string collectionQuery = string.Empty;
+                string collectionsettingsQuery = string.Empty;
+
+                if (filter == null || filter.All(item => string.IsNullOrEmpty(item)))
+                {
+                    collectionQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType='{0:D}'", collectiontype);
+                    collectionsettingsQuery = "SELECT * FROM SMS_CollectionSettings";
+                }
+                else
+                {
+                    collectionQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType='{0:D}' AND CollectionID IN ('{1}')", collectiontype, string.Join("','", filter));
+                    collectionsettingsQuery = String.Format("SELECT * FROM SMS_CollectionSettings WHERE CollectionID IN ('{0}')", string.Join("','", filter));
+                }
+
+                IResultObject collections = connection.QueryProcessor.ExecuteQuery(collectionQuery);
+                IResultObject tmpsettings = connection.QueryProcessor.ExecuteQuery(collectionsettingsQuery);
+
+                List<CMVariablesSettings> collectionssettings = new List<CMVariablesSettings>();
+
+                foreach (IResultObject tmpsetting in tmpsettings)
+                {
+                    tmpsetting.Get();
+                    List<CMVariables> allvariables = new List<CMVariables>();
+                    if (tmpsetting["CollectionVariables"].ObjectValue != null)
+                    {
+                        foreach (IResultObject varobject in tmpsetting.GetArrayItems("CollectionVariables"))
+                        {
+                            CMVariables tmpvar = new CMVariables
+                            {
+                                Name = varobject["Name"].StringValue,
+                                Value = varobject["Value"].StringValue
+                            };
+                            allvariables.Add(tmpvar);
+                        }
+                    }
+
+                    CMVariablesSettings collectionsproperties = new CMVariablesSettings
+                    {
+                        CollectionID = tmpsetting["CollectionID"].StringValue,
+                        Variable = allvariables
+                    };
+                    collectionssettings.Add(collectionsproperties);
+                }
+
+                foreach (IResultObject collection in collections)
+                {
+                    collection.Get();
+                    List<CMVariables> variable = new List<CMVariables>();
+                    foreach (CMVariablesSettings collectionsetting in collectionssettings)
+                    {
+                        if (collectionsetting.CollectionID == collection["CollectionID"].StringValue)
+                        {
+                            variable = collectionsetting.Variable;
+                        }
+                    }
+
+                    ArrayList collectionrulelist = new ArrayList();
+                    if (collection["CollectionRules"].ObjectValue != null)
+                    {
+                        foreach (IResultObject collectionrule in collection.GetArrayItems("CollectionRules"))
+                        {
+                            if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleQuery")
+                            {
+                                CMQueryRule tmpcollectionrule = new CMQueryRule
+                                {
+                                    RuleType = collectionrule["__CLASS"].StringValue,
+                                    RuleName = collectionrule["RuleName"].StringValue,
+                                    QueryID = collectionrule["QueryID"].StringValue,
+                                    QueryExpression = collectionrule["QueryExpression"].StringValue
+                                };
+                                collectionrulelist.Add(tmpcollectionrule);
+                            }
+                            else if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleDirect")
+                            {
+                                CMDirectRule tmpcollectionrule = new CMDirectRule
+                                {
+                                    RuleType = collectionrule["__CLASS"].StringValue,
+                                    RuleName = collectionrule["RuleName"].StringValue,
+                                    ResourceClassName = collectionrule["ResourceClassName"].StringValue,
+                                    ResourceID = collectionrule["ResourceID"].StringValue
+                                };
+                                collectionrulelist.Add(tmpcollectionrule);
+                            }
+                            else if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleIncludeCollection")
+                            {
+                                CMIncludeRule tmpcollectionrule = new CMIncludeRule
+                                {
+                                    RuleType = collectionrule["__CLASS"].StringValue,
+                                    RuleName = collectionrule["RuleName"].StringValue,
+                                    IncludeCollectionID = collectionrule["IncludeCollectionID"].StringValue
+                                };
+                                collectionrulelist.Add(tmpcollectionrule);
+                            }
+                            else
+                            {
+                                CMExcludeRule tmpcollectionrule = new CMExcludeRule
+                                {
+                                    RuleType = collectionrule["__CLASS"].StringValue,
+                                    RuleName = collectionrule["RuleName"].StringValue,
+                                    ExcludeCollectionID = collectionrule["ExcludeCollectionID"].StringValue
+                                };
+                                collectionrulelist.Add(tmpcollectionrule);
+                            }
+                        }
+                    }
+
+                    CMCollectionAdvanced collectioninfos = new CMCollectionAdvanced
+                    {
+                        Name = collection["Name"].StringValue,
+                        CollectionID = collection["CollectionID"].StringValue,
+                        Variable = variable,
+                        AdhesionRules = collectionrulelist
+                    };
+                    collectionList.Add(collectioninfos);
+
+                }
             }
 
             MethodEnd(method);
