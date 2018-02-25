@@ -976,7 +976,111 @@ namespace ConfigMgrWebService
             return collectionList;
         }
 
-        [WebMethod(Description = "Get collection variable for filtered device collection or all collections")]
+        [WebMethod(Description = "Get collection variable for device by Name")]
+        public CMDevice GetCMDeviceVariableByName(string secret, string computername = null)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            CMDevice computerproperties = new CMDevice();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                if (computername != null)
+                {
+                    //' Connect to SMS Provider
+                    SmsProvider smsProvider = new SmsProvider();
+                    WqlConnectionManager connection = smsProvider.Connect(siteServer);
+                    string computerquery = string.Empty;
+                    computerquery = String.Format("SELECT * FROM SMS_R_SYSTEM WHERE Name='{0}'", computername);
+                    IResultObject computerinfos = connection.QueryProcessor.ExecuteQuery(computerquery);
+
+                    foreach (IResultObject computerinfo in computerinfos)
+                    {
+                        if (computerinfo["ResourceID"].StringValue != null)
+                        {
+                            string computervarquery = string.Empty;
+                            computervarquery = String.Format("SELECT * FROM SMS_MachineSettings WHERE ResourceID='{0}'", computerinfo["ResourceID"].StringValue);
+                            IResultObject computervarinfos = connection.QueryProcessor.ExecuteQuery(computervarquery);
+                            foreach (IResultObject computervarinfo in computervarinfos)
+                            {
+                                computervarinfo.Get();
+                                if (computervarinfo["MachineVariables"].ObjectValue != null)
+                                {
+                                    List<CMDeviceVariable> variablelist = new List<CMDeviceVariable>();
+                                    foreach (IResultObject computervariable in computervarinfo.GetArrayItems("MachineVariables"))
+                                    {
+                                        if (computervariable["IsMasked"].BooleanValue == false)
+                                        {
+                                            CMDeviceVariable devicevariable = new CMDeviceVariable
+                                            {
+                                                Name = computervariable["Name"].StringValue,
+                                                Value = computervariable["Value"].StringValue
+                                            };
+                                            variablelist.Add(devicevariable);
+                                        }
+                                    }
+                                    computerproperties.Name = computerinfo["Name"].StringValue;
+                                    computerproperties.Variable = variablelist;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            MethodEnd(method);
+            return computerproperties;
+        }
+
+        [WebMethod(Description = "Get collection variable for device by ID")]
+        public CMDeviceByID GetCMDeviceVariableByID(string secret, string resourceid = null)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            CMDeviceByID computerproperties = new CMDeviceByID();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                if (resourceid != null)
+                {
+                    //' Connect to SMS Provider
+                    SmsProvider smsProvider = new SmsProvider();
+                    WqlConnectionManager connection = smsProvider.Connect(siteServer);
+                    string computervarquery = string.Empty;
+                    computervarquery = String.Format("SELECT * FROM SMS_MachineSettings WHERE ResourceID='{0}'", resourceid);
+                    IResultObject computervarinfos = connection.QueryProcessor.ExecuteQuery(computervarquery);
+                    foreach (IResultObject computervarinfo in computervarinfos)
+                    {
+                        computervarinfo.Get();
+                        if (computervarinfo["MachineVariables"].ObjectValue != null)
+                        {
+                            List<CMDeviceVariable> variablelist = new List<CMDeviceVariable>();
+                            foreach (IResultObject computervariable in computervarinfo.GetArrayItems("MachineVariables"))
+                            {
+                                if (computervariable["IsMasked"].BooleanValue == false)
+                                {
+                                    CMDeviceVariable devicevariable = new CMDeviceVariable
+                                    {
+                                        Name = computervariable["Name"].StringValue,
+                                        Value = computervariable["Value"].StringValue
+                                    };
+                                    variablelist.Add(devicevariable);
+                                }
+                            }
+                            computerproperties.ResourceID = computervarinfo["ResourceID"].StringValue;
+                            computerproperties.Variable = variablelist;
+                        }
+                    }
+                }
+            }
+            MethodEnd(method);
+            return computerproperties;
+        }
+
+        [WebMethod(Description = "Get collection variable for filter collection or all collections")]
         public List<CMCollectionVariables> GetCMCollectionVariableByName(string secret, CMCollectionType collectiontype, string[] filter = null)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
@@ -1016,6 +1120,7 @@ namespace ConfigMgrWebService
                     };
                     collectionList.Add(tmpobj);
                     collectionIDfilter.Add(tmpobj.CollectionID);
+
                 }
 
                 if (collectionIDfilter != null || collectionIDfilter.All(item => string.IsNullOrEmpty(item)))
@@ -1030,12 +1135,15 @@ namespace ConfigMgrWebService
                         {
                             foreach (IResultObject varobject in collectionsettings.GetArrayItems("CollectionVariables"))
                             {
-                                CMVariables tmpvar = new CMVariables
+                                if (varobject["IsMasked"].BooleanValue == false)
                                 {
-                                    Name = varobject["Name"].StringValue,
-                                    Value = varobject["Value"].StringValue
-                                };
-                                allvariables.Add(tmpvar);
+                                    CMVariables tmpvar = new CMVariables
+                                    {
+                                        Name = varobject["Name"].StringValue,
+                                        Value = varobject["Value"].StringValue
+                                    };
+                                    allvariables.Add(tmpvar);
+                                }
                             }
                         }
 
@@ -1056,7 +1164,7 @@ namespace ConfigMgrWebService
             return collectionList;
         }
 
-        [WebMethod(Description = "Get collection variable for filtered device collection or all collections")]
+        [WebMethod(Description = "Get collection variable for filter collection or all collections")]
         public List<CMVariablesSettings> GetCMCollectionVariableByID(string secret, string[] filter = null)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
@@ -1093,12 +1201,15 @@ namespace ConfigMgrWebService
                     {
                         foreach (IResultObject varobject in tmpsetting.GetArrayItems("CollectionVariables"))
                         {
-                            CMVariables tmpvar = new CMVariables
+                            if (varobject["IsMasked"].BooleanValue == false)
                             {
-                                Name = varobject["Name"].StringValue,
-                                Value = varobject["Value"].StringValue
-                            };
-                            allvariables.Add(tmpvar);
+                                CMVariables tmpvar = new CMVariables
+                                {
+                                    Name = varobject["Name"].StringValue,
+                                    Value = varobject["Value"].StringValue
+                                };
+                                allvariables.Add(tmpvar);
+                            }
                         }
                     }
 
@@ -1172,12 +1283,15 @@ namespace ConfigMgrWebService
 
                             foreach (IResultObject varobject in collectionsettings.GetArrayItems("CollectionVariables"))
                             {
-                                CMVariables tmpvar = new CMVariables
+                                if (varobject["Ismasked"].BooleanValue == false)
                                 {
-                                    Name = varobject["Name"].StringValue,
-                                    Value = varobject["Value"].StringValue
-                                };
-                                allvariables.Add(tmpvar);
+                                    CMVariables tmpvar = new CMVariables
+                                    {
+                                        Name = varobject["Name"].StringValue,
+                                        Value = varobject["Value"].StringValue
+                                    };
+                                    allvariables.Add(tmpvar);
+                                }
                             }
                         }
 
@@ -1311,12 +1425,15 @@ namespace ConfigMgrWebService
                     {
                         foreach (IResultObject varobject in tmpsetting.GetArrayItems("CollectionVariables"))
                         {
-                            CMVariables tmpvar = new CMVariables
+                            if (varobject["IsMasked"].BooleanValue == false)
                             {
-                                Name = varobject["Name"].StringValue,
-                                Value = varobject["Value"].StringValue
-                            };
-                            allvariables.Add(tmpvar);
+                                CMVariables tmpvar = new CMVariables
+                                {
+                                    Name = varobject["Name"].StringValue,
+                                    Value = varobject["Value"].StringValue
+                                };
+                                allvariables.Add(tmpvar);
+                            }
                         }
                     }
 
@@ -1406,7 +1523,7 @@ namespace ConfigMgrWebService
             return collectionList;
         }
 
-        [WebMethod(Description = "Get all object in sccm console node.")]
+        [WebMethod(Description = "Get SCCM Console Node objects")]
         public List<CMNode> GetCMNodeObjects(string secret, CMNodeObjectType objecttype = CMNodeObjectType.SMS_Collection_Device)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
@@ -1436,82 +1553,79 @@ namespace ConfigMgrWebService
                     folderitems.Add(tmpfolderitem);
                 }
 
-                if (folderList != null)
+                foreach (IResultObject foldernode in foldernodes)
                 {
-                    foreach (IResultObject foldernode in foldernodes)
-                    {
-                        List<string> MemberIDTmpArray = new List<string>();
-                        List<string> MemberGuidTmpArray = new List<string>();
-                        List<string> InstanceKeyTmpArray = new List<string>();
+                    List<string> MemberIDTmpArray = new List<string>();
+                    List<string> MemberGuidTmpArray = new List<string>();
+                    List<string> InstanceKeyTmpArray = new List<string>();
 
-                        foreach (IResultObject folderitem in folderitems)
+                    foreach (IResultObject folderitem in folderitems)
+                    {
+                        if (folderitem["ContainerNodeID"].StringValue == foldernode["ContainerNodeID"].StringValue)
                         {
-                            if (folderitem["ContainerNodeID"].StringValue == foldernode["ContainerNodeID"].StringValue)
+                            MemberIDTmpArray.Add(folderitem["MemberID"].StringValue);
+                            MemberGuidTmpArray.Add(folderitem["MemberGuid"].StringValue);
+                            InstanceKeyTmpArray.Add(folderitem["InstanceKey"].StringValue);
+                        }
+                    }
+
+                    CMNode tmpfolder = new CMNode()
+                    {
+                        Name = foldernode["Name"].StringValue,
+                        ContainerNodeID = foldernode["ContainerNodeID"].StringValue,
+                        MemberID = MemberIDTmpArray,
+                        MemberGuid = MemberGuidTmpArray,
+                        InstanceKey = InstanceKeyTmpArray,
+                        ParentContainerNodeID = foldernode["ParentContainerNodeID"].StringValue,
+                        FolderGuid = foldernode["FolderGuid"].StringValue
+                    };
+                    folderList.Add(tmpfolder);
+                }
+
+                foreach (CMNode folder in folderList)
+                {
+                    if (folder.ParentContainerNodeID != "0")
+                    {
+                        CMNode ParentContainerProperties = new CMNode();
+                        foreach (CMNode f in folderList)
+                        {
+                            if (f.ContainerNodeID == folder.ParentContainerNodeID)
                             {
-                                MemberIDTmpArray.Add(folderitem["MemberID"].StringValue);
-                                MemberGuidTmpArray.Add(folderitem["MemberGuid"].StringValue);
-                                InstanceKeyTmpArray.Add(folderitem["InstanceKey"].StringValue);
+                                ParentContainerProperties = f;
                             }
                         }
 
-                        CMNode tmpfolder = new CMNode()
+                        bool ParentContainer = true;
+                        while (ParentContainer == true)
                         {
-                            Name = foldernode["Name"].StringValue,
-                            ContainerNodeID = foldernode["ContainerNodeID"].StringValue,
-                            MemberID = MemberIDTmpArray,
-                            MemberGuid = MemberGuidTmpArray,
-                            InstanceKey = InstanceKeyTmpArray,
-                            ParentContainerNodeID = foldernode["ParentContainerNodeID"].StringValue,
-                            FolderGuid = foldernode["FolderGuid"].StringValue
-                        };
-                        folderList.Add(tmpfolder);
-                    }
-
-                    foreach (CMNode folder in folderList)
-                    {
-                        if (folder.ParentContainerNodeID != "0")
-                        {
-                            CMNode ParentContainerProperties = new CMNode();
-                            foreach (CMNode f in folderList)
+                            folder.Path = (ParentContainerProperties.Name + "\\" + folder.Path);
+                            if (ParentContainerProperties.ParentContainerNodeID != "0")
                             {
-                                if (f.ContainerNodeID == folder.ParentContainerNodeID)
+                                foreach (CMNode f1 in folderList)
                                 {
-                                    ParentContainerProperties = f;
-                                }
-                            }
-
-                            bool ParentContainer = true;
-                            while (ParentContainer == true)
-                            {
-                                folder.Path = (ParentContainerProperties.Name + "\\" + folder.Path);
-                                if (ParentContainerProperties.ParentContainerNodeID != "0")
-                                {
-                                    foreach (CMNode f1 in folderList)
+                                    if (f1.ContainerNodeID == ParentContainerProperties.ParentContainerNodeID)
                                     {
-                                        if (f1.ContainerNodeID == ParentContainerProperties.ParentContainerNodeID)
-                                        {
-                                            ParentContainerProperties = f1;
-                                        }
+                                        ParentContainerProperties = f1;
                                     }
                                 }
-                                else
-                                {
-                                    ParentContainer = false;
-                                    folder.Path = ("Root\\" + folder.Path + folder.Name);
-                                }
+                            }
+                            else
+                            {
+                                ParentContainer = false;
+                                folder.Path = ("Root\\" + folder.Path + folder.Name);
                             }
                         }
-                        else
-                        {
-                            folder.Path = ("Root\\" + folder.Name);
-                        }
                     }
-
+                    else
+                    {
+                        folder.Path = ("Root\\" + folder.Name);
+                    }
                 }
             }
             MethodEnd(method);
             return folderList;
         }
+
 
 
         [WebMethod(Description = "Update membership of a specific collection")]
