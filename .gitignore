@@ -244,3 +244,5 @@ ModelManifest.xml
 # FAKE - F# Make
 .fake/
 /Code.txt
+/AdminUI.WqlQueryEngine.dll
+/Microsoft.ConfigurationManagement.ManagementProvider.dll

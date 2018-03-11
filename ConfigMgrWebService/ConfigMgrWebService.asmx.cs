@@ -2290,7 +2290,7 @@ namespace ConfigMgrWebService
                 }
                 catch (Exception ex)
                 {
-                    WriteEventLog("Unable to detect domain controllers in current domain.", EventLogEntryType.Error);
+                    WriteEventLog(String.Format("Unable to detect domain controllers in current domain.", ex.Message), EventLogEntryType.Error);
                     returnValue = false;
                 }
 
@@ -2824,6 +2824,93 @@ namespace ConfigMgrWebService
             MethodEnd(method);
             return returnValue;
         }
+
+
+        /// <summary>
+        /// Adds an entry to the MDT Event Log (if present)
+        /// </summary>
+        [WebMethod(Description = "Adds an arbitrary event in the MDT event log")]
+        public bool AddMDTEventLogEntry(string secret, UInt16 eventID, UInt16 eventSeverity, string eventMessage) {
+
+            // Always assume the worst
+            bool returnValue = false;
+
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+           
+            // Validate secret key
+            if(secret == secretKey) {
+
+                // Check if event log exists, if not error to event log
+                try {
+                    // An exception can be thrown if not enough permissions exist to query the event log sources...
+                    // So to be on the safe side...
+                    if (!EventLog.SourceExists("MDT_Monitor") ) {
+                        WriteEventLog("The MDT Monitoring does not appear to be active. Please ensure it is activated before attempting to use this function again.", EventLogEntryType.Error);
+                    }
+                    else {
+
+                        // MDT_Monitor source exists.. lets do it
+                        try {
+                            using(EventLog mdtEventLog = new EventLog()) {
+
+                                // Define a type and set a default value
+                                EventLogEntryType type = EventLogEntryType.Information;
+
+                                switch(eventSeverity) {
+                                    // Map 1 to information
+                                    case 1:
+                                        type = EventLogEntryType.Information;
+                                        break;
+                                    // Map 2 to warning
+                                    case 2:
+                                        type = EventLogEntryType.Warning;
+                                        break;
+                                    // Map 3 to error
+                                    case 3:
+                                        type = EventLogEntryType.Error;
+                                        break;
+                                    // Any other values just ignore (i.e. keep mapped to information)
+                                    default:
+                                        break;
+
+                                }
+
+                                // I could possibly add code to filter
+                                // out the hard-coded event ID's from the built in MDT event logging
+                                // but cannot be arsed
+
+
+                                // Do it
+                                mdtEventLog.Source = "MDT_Monitor";
+                                mdtEventLog.Log = "Application";
+                                mdtEventLog.WriteEntry(eventMessage, type, eventID);
+
+                                // If we get here, then everything is ok
+                                returnValue = true;
+
+                            }
+                        }
+                        catch(Exception ex) {
+                            // Write the exception information into the CfgMgr event log
+                            WriteEventLog(String.Format("Error attemtping to write to the MDT Event Log. Error Message: {0}", ex.Message), EventLogEntryType.Error);
+                        }
+                    }
+                }
+                catch (Exception ex){
+                    // Write the exception information into the CfgMgr event log
+                    WriteEventLog(String.Format("Error attempting to query the EventLog sources or the MDT_Monitor source is not present. Error Message: {0}",ex.Message) , EventLogEntryType.Error);
+                }
+            }
+  
+
+            MethodEnd(method);
+
+            // Return what we have
+            return returnValue;
+        }
+
+
 
         [WebMethod(Description = "Remove MDT computer from all associated roles")]
         public bool RemoveMDTComputerFromRoles(string secret, string identity)
