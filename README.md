@@ -30,6 +30,7 @@ The list below shows an overview of the available methods:
 
 ### Microsoft Deployment Toolkit
 
+- AddMDTEventLogEntry
 - AddMDTRoleMember 
 - AddMDTRoleMemberByAssetTag 
 - AddMDTRoleMemberByMacAddress 
