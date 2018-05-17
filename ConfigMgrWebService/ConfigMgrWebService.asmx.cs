@@ -2346,6 +2346,64 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Get the Bitlocker Recovery Key from AD")]
+        public string GetADBitlockerRecoveryKey(string secret, string bitlockerID)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for Bitlocker Recovery Key
+            string bdeRecoveryKey = string.Empty;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Set empty value for search result
+                SearchResult searchResult = null;
+                DirectoryEntry directoryObject = null;
+
+                //' Get default naming context of current domain
+                string defaultNamingContext = GetADDefaultNamingContext();
+                string currentDomain = String.Format("LDAP://{0}", defaultNamingContext);
+
+                //' Construct directory entry for directory searcher
+                DirectoryEntry domain = new DirectoryEntry(currentDomain);
+                DirectorySearcher directorySearcher = new DirectorySearcher(domain);
+                directorySearcher.Filter = String.Format("(&(objectClass=msFVE-RecoveryInformation)(Name=*{0}*))", bitlockerID);
+                directorySearcher.PropertiesToLoad.Add("msFVE-RecoveryPassword");
+
+                //' Invoke directory searcher
+                try
+                {
+                    searchResult = directorySearcher.FindOne();
+                    if (searchResult != null)
+                    {
+                        //' Get computer object from search result
+                        directoryObject = searchResult.GetDirectoryEntry();
+
+                        if (directoryObject != null)
+                        {
+                            bdeRecoveryKey = (string)directoryObject.Properties["msFVE-RecoveryPassword"].Value;
+
+                            // Dispose directory object
+                            directoryObject.Dispose();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog(String.Format("An error occured when attempting to locate Active Directory object. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                }
+
+                //' Dispose objects
+                directorySearcher.Dispose();
+                domain.Dispose();
+            }
+
+            MethodEnd(method);
+            return bdeRecoveryKey;
+        }
+
         [WebMethod(Description = "Write event to web service log")]
         public bool NewCWEventLogEntry(string secret, string value)
         {
