@@ -11,5 +11,7 @@ namespace ConfigMgrWebService
         public string PackageID { get; set; }
         public string AdvertisementId { get; set; }
         public int AdvertFlags { get; set; }
+        public string Description { get; set; }
+        public string BootImageID { get; set; }
     }
 }

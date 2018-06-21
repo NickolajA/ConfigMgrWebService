@@ -91,12 +91,16 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ADComputer.cs" />
+    <Compile Include="ADDomain.cs" />
     <Compile Include="ADGroup.cs" />
+    <Compile Include="ADOrganizationalUnit.cs" />
     <Compile Include="CMApplication.cs" />
     <Compile Include="CMCollection.cs" />
+    <Compile Include="CMOSImage.cs" />
     <Compile Include="CMResource.cs" />
     <Compile Include="CMUserDeviceRelation.cs" />
     <Compile Include="IPAddresses.cs" />
+    <Compile Include="MDTComputer.cs" />
     <Compile Include="MDTRole.cs" />
     <Compile Include="CMPackage.cs" />
     <Compile Include="CMDriverPackage.cs" />

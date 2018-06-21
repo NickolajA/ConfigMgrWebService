@@ -22,7 +22,7 @@ using System.Runtime.InteropServices;
 
 namespace ConfigMgrWebService
 {
-    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (1.5.0)", Namespace = "http://www.scconfigmgr.com")]
+    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (1.6.0)", Namespace = "http://www.scconfigmgr.com")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
     [System.ComponentModel.ToolboxItem(false)]
 
@@ -554,6 +554,39 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Get the UUID (SMBIOS GUID) of a specific device by name")]
+        public string GetCMDeviceUUIDByName(string secret, string computerName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Query for device name
+                string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like '{0}'", computerName);
+                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                if (result != null)
+                {
+                    foreach (IResultObject device in result)
+                    {
+                        returnValue = device["SMBIOSGUID"].StringValue;
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
         [WebMethod(Description = "Get hidden task sequence deployments for a specific resource id")]
         public List<CMTaskSequence> GetCMHiddenTaskSequenceDeploymentsByResourceId(string secret, string resourceId)
         {
@@ -882,7 +915,7 @@ namespace ConfigMgrWebService
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
                 //' Get resource id for given computer name
-                string resourceId = GetCMCompterResourceId(resourceName);
+                string resourceId = GetCMComputerResourceId(resourceName);
                 if (!String.IsNullOrEmpty(resourceId))
                 {
                     //' Initiate collection object
@@ -1191,6 +1224,31 @@ namespace ConfigMgrWebService
             return osArchitectureList;
         }
 
+        [WebMethod(Description = "Retrieve the associated OS Image object details for a specific task sequence (supports multiple images)")]
+        public List<CMOSImage> GetCMOSImageForTaskSequence(string secret, string tsPackageId)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct variable for OS Image version
+            List<CMOSImage> osImageList = new List<CMOSImage>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get OS images
+                List<CMOSImage> osImages = GetOSImage(tsPackageId);
+
+                foreach (CMOSImage image in osImages)
+                {
+                    osImageList.Add(image);
+                }
+            }
+
+            MethodEnd(method);
+            return osImageList;
+        }
+
         [WebMethod(Description = "Delete 'Unknown' device record by UUID (SMBIOS GUID)")]
         public int RemoveCMUnknownDeviceByUUID(string secret, string uuid)
         {
@@ -1215,6 +1273,111 @@ namespace ConfigMgrWebService
                 if (unknownRecord != null)
                 {
                     foreach (IResultObject record in unknownRecord)
+                    {
+                        record.Delete();
+                        records++;
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return records;
+        }
+
+        [WebMethod(Description = "Delete specific device record by UUID (SMBIOS GUID)")]
+        public int RemoveCMDeviceByUUID(string secret, string uuid)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for amount of removed records
+            int records = 0;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get device records
+                string query = String.Format("SELECT * FROM SMS_R_System WHERE SMBIOSGUID like '{0}'", uuid);
+                IResultObject deviceRecords = connection.QueryProcessor.ExecuteQuery(query);
+
+                //' Remove all device records matching uuid
+                if (deviceRecords != null)
+                {
+                    foreach (IResultObject record in deviceRecords)
+                    {
+                        record.Delete();
+                        records++;
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return records;
+        }
+
+        [WebMethod(Description = "Delete specific device record by name")]
+        public int RemoveCMDeviceByName(string secret, string name)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for amount of removed records
+            int records = 0;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get device records
+                string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like '{0}'", name);
+                IResultObject deviceRecords = connection.QueryProcessor.ExecuteQuery(query);
+
+                //' Remove all device records matching name
+                if (deviceRecords != null)
+                {
+                    foreach (IResultObject record in deviceRecords)
+                    {
+                        record.Delete();
+                        records++;
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return records;
+        }
+
+        [WebMethod(Description = "Delete specific device record by resource id")]
+        public int RemoveCMDeviceByResourceID(string secret, string resourceId)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for amount of removed records
+            int records = 0;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get device records
+                string query = String.Format("SELECT * FROM SMS_R_System WHERE ResourceID like '{0}'", resourceId);
+                IResultObject deviceRecords = connection.QueryProcessor.ExecuteQuery(query);
+
+                //' Remove all device records matching resource id
+                if (deviceRecords != null)
+                {
+                    foreach (IResultObject record in deviceRecords)
                     {
                         record.Delete();
                         records++;
@@ -1845,6 +2008,42 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Get details about a specific task sequence")]
+        public CMTaskSequence GetCMTaskSequence(string secret, string packageID)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            CMTaskSequence taskSequence = new CMTaskSequence();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' Get task sequence object
+                string tsQuery = String.Format("SELECT * FROM SMS_TaskSequencePackage WHERE PackageID = '{0}'", packageID);
+                IResultObject tsResult = connection.QueryProcessor.ExecuteQuery(tsQuery);
+
+                if (tsResult != null)
+                {
+                    foreach (IResultObject ts in tsResult)
+                    {
+                        taskSequence.PackageID = ts["PackageID"].StringValue;
+                        taskSequence.Description = ts["Description"].StringValue;
+                        taskSequence.PackageName = ts["Name"].StringValue;
+                        taskSequence.BootImageID = ts["BootImageID"].StringValue;
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return taskSequence;
+        }
+
         [WebMethod(Description = "Move a computer in Active Directory to a specific organizational unit")]
         public bool SetADOrganizationalUnitForComputer(string secret, string organizationalUnitLocation, string computerName)
         {
@@ -2121,6 +2320,43 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Get the description field for a computer in Active Directory")]
+        public string GetADComputerDescription(string secret, string computerName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get AD object distinguished name for computer
+                string computerDistinguishedName = GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName);
+
+                if (!String.IsNullOrEmpty(computerDistinguishedName))
+                {
+                    try
+                    {
+                        //' Set computer object description
+                        DirectoryEntry computerEntry = new DirectoryEntry(computerDistinguishedName);
+                        returnValue = computerEntry.Properties["description"].Value.ToString();
+
+                        //' Dispose object
+                        computerEntry.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to remove a computer object in Active Directory from a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
         [WebMethod(Description = "Get the Active Directory site name by IP address")]
         public string GetADSiteNameByIPAddress(string secret, string forestName, string ipAddress)
         {
@@ -2189,6 +2425,44 @@ namespace ConfigMgrWebService
             return memberState;
         }
 
+        [WebMethod(Description = "Validates if computer is a member of a specific group")]
+        public bool GetADGroupMemberByComputer(string secret, string computerName, string groupName, string domain)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Instatiate return value variable
+            bool memberState = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Check if computer is member of group
+                using (PrincipalContext context = new PrincipalContext(ContextType.Domain, domain))
+                using (ComputerPrincipal computer = ComputerPrincipal.FindByIdentity(context, computerName))
+                using (GroupPrincipal group = GroupPrincipal.FindByIdentity(context, groupName))
+                {
+                    if (computer != null)
+                    {
+                        WriteEventLog("Successfully located computer object", EventLogEntryType.Information);
+                        if (group != null)
+                        {
+                            WriteEventLog("Successfully located group object", EventLogEntryType.Information);
+
+                            //' Check if computer is member of group from param value, also check nested groups
+                            memberState = GetADGroupNestedMemberOf(computer, group);
+                        }
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return memberState;
+        }
+
         [WebMethod(Description = "Check if a computer object exists in Active Directory")]
         public ADComputer GetADComputer(string secret, string computerName)
         {
@@ -2207,7 +2481,7 @@ namespace ConfigMgrWebService
 
                 //' Get default naming context of current domain
                 string defaultNamingContext = GetADDefaultNamingContext();
-                string currentDomain = String.Format("LDAP://{0}", defaultNamingContext);
+                string currentDomain = String.Format("GC://{0}", defaultNamingContext);
 
                 //' Construct directory entry for directory searcher
                 DirectoryEntry domain = new DirectoryEntry(currentDomain);
@@ -2346,6 +2620,96 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Get the domain details for current domain")]
+        public ADDomain GetADDomain(string secret)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Instatiate return value variable
+            ADDomain domain = new ADDomain();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                domain.DefaultNamingContext = GetADDefaultNamingContext();
+                domain.DomainName = GetADDomainName();
+            }
+
+            MethodEnd(method);
+            return domain;
+        }
+
+        [WebMethod(Description = "Get a list of all organizational units from a specific container level")]
+        public List<ADOrganizationalUnit> GetADOrganizationalUnits(string secret, string distinguishedName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            List<ADOrganizationalUnit> containers = new List<ADOrganizationalUnit>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                try
+                {
+                    //' Determine if ldap prefix needs to be appended
+                    if (distinguishedName.StartsWith("LDAP://") == false)
+                    {
+                        distinguishedName = String.Format("LDAP://{0}", distinguishedName);
+                    }
+
+                    //' Get the base OU directory entry and start a one level search
+                    using (DirectorySearcher directorySearcher = new DirectorySearcher(new DirectoryEntry(distinguishedName)))
+                    {
+                        //' Define filter options for searcher
+                        directorySearcher.Filter = "(objectCategory=organizationalUnit)";
+                        directorySearcher.SearchScope = SearchScope.OneLevel;
+                        directorySearcher.PropertiesToLoad.Add("name");
+                        directorySearcher.PropertiesToLoad.Add("path");
+
+                        //' Enumerate top level containers
+                        foreach (SearchResult container in directorySearcher.FindAll())
+                        {
+                            //' Search for children
+                            SearchResult childResult = null;
+                            using (DirectorySearcher childDirectorySearcher = new DirectorySearcher(new DirectoryEntry(container.Path)))
+                            {
+                                //' Define filter options for searcher
+                                childDirectorySearcher.Filter = "(objectCategory=organizationalUnit)";
+                                childDirectorySearcher.SearchScope = SearchScope.OneLevel;
+                                childDirectorySearcher.PropertiesToLoad.Add("name");
+                                childResult = childDirectorySearcher.FindOne();
+                            }
+
+                            //' Determine if child exist
+                            bool childPresence = false;
+                            if (childResult != null)
+                            {
+                                childPresence = true;
+                            }
+
+                            //' Construct a new object to hold container information
+                            ADOrganizationalUnit orgUnit = new ADOrganizationalUnit()
+                            {
+                                HasChildren = childPresence,
+                                Name = container.Properties["name"][0].ToString(),
+                                DistinguishedName = container.Path
+                            };
+                            containers.Add(orgUnit);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog(String.Format("Could not enumerate OUs. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                }
+            }
+            MethodEnd(method);
+            return containers;
+        }
+        
         [WebMethod(Description = "Write event to web service log")]
         public bool NewCWEventLogEntry(string secret, string value)
         {
@@ -2870,6 +3234,54 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Remove MDT computer identity by serial number")]
+        public bool RemoveMDTComputerBySerialNumber(string secret, string serialNumber)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get computer identity from in param value
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                string identity = GetMDTComputerIdentity(connectionString, "SerialNumber", serialNumber);
+
+                if (!String.IsNullOrEmpty(identity))
+                {
+                    returnValue = RemoveMDTComputer(connectionString, identity);
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get a MDT computer identity by computer name")]
+        public List<MDTComputer> GetMDTComputerByName(string secret, string computerName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            List<MDTComputer> computerList = new List<MDTComputer>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Get computer identity from in param value
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+
+                computerList = GetMDTComputerByName(connectionString, computerName);
+            }
+
+            MethodEnd(method);
+            return computerList;
+        }
+
         private bool RemoveMDTComputer(SqlConnectionStringBuilder connectionString, string identity)
         {
             //' Construct variable for return value
@@ -3235,6 +3647,67 @@ namespace ConfigMgrWebService
             }
         }
 
+        private List<MDTComputer> GetMDTComputerByName(SqlConnectionStringBuilder connectionString, string computerName)
+        {
+            List<MDTComputer> computerList = new List<MDTComputer>();
+
+            try
+            {
+                //' Connect to SQL server instance
+                SqlConnection connection = new SqlConnection();
+                connection.ConnectionString = connectionString.ConnectionString;
+                connection.Open();
+
+                //' Construct SQL statement
+                SqlCommand command = connection.CreateCommand();
+                StringBuilder sqlString = new StringBuilder();
+                sqlString.Append("SELECT Settings.ID, Settings.OSDComputerName, ComputerIdentity.AssetTag, ComputerIdentity.MacAddress, ComputerIdentity.SerialNumber, ComputerIdentity.UUID FROM Settings JOIN ComputerIdentity ON Settings.ID = ComputerIdentity.ID WHERE OSDComputerName like @ComputerName");
+
+                //' Add parameters with value to command
+                command.Parameters.Add("@ComputerName", SqlDbType.NVarChar).Value = computerName;
+                command.CommandText = sqlString.ToString();
+
+                //' Invoke SQL command to retrieve computer identity
+                try
+                {
+                    string identity = string.Empty;
+                    SqlDataReader reader = command.ExecuteReader();
+                    if (reader.HasRows == true)
+                    {
+                        while (reader.Read())
+                        {
+                            MDTComputer computerItem = new MDTComputer()
+                            {
+                                ComputerName = reader["OSDComputerName"].ToString(),
+                                ComputerIdentity = reader["ID"].ToString(),
+                                AssetTag = reader["AssetTag"].ToString(),
+                                SerialNumber = reader["SerialNumber"].ToString(),
+                                UUID = reader["UUID"].ToString(),
+                                MacAddress = reader["MacAddress"].ToString()
+                            };
+                            computerList.Add(computerItem);
+                        }
+                    }
+
+                    //' Cleanup and disconnect SQL connection
+                    command.Dispose();
+                    connection.Close();
+
+                    return computerList;
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog(String.Format("An error occured when attempting to get MDT computer objects. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    return null;
+                }
+            }
+            catch (SqlException ex)
+            {
+                WriteEventLog(String.Format("An error occured while connecting to SQL server hosting MDT database. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                return null;
+            }
+        }
+
         private string GetMDTComputerName(string identity)
         {
             string computerIdentity = string.Empty;
@@ -3490,6 +3963,65 @@ namespace ConfigMgrWebService
             return osPropertyList;
         }
 
+        private List<CMOSImage> GetOSImage(string tsPackageId)
+        {
+            List<CMOSImage> osImageList = new List<CMOSImage>();
+
+            //' Connect to SMS Provider
+            SmsProvider smsProvider = new SmsProvider();
+            WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+            //' Get all task sequence references for specific task sequence
+            string query = String.Format("SELECT * FROM SMS_TaskSequencePackageReference WHERE PackageID like '{0}'", tsPackageId);
+            IResultObject tsReferences = connection.QueryProcessor.ExecuteQuery(query);
+
+            if (tsReferences != null)
+            {
+                List<string> osImageIds = new List<string>();
+                UInt32 osImageType = 257;
+                UInt32 osImageInstallType = 259;
+
+                //' Process all task sequence references to determine the OS image package ID
+                foreach (IResultObject reference in tsReferences)
+                {
+                    if (reference["ObjectType"].IntegerValue == osImageType || reference["ObjectType"].IntegerValue == osImageInstallType)
+                    {
+                        osImageIds.Add(reference["ObjectID"].StringValue);
+                    }
+                }
+
+                //' Get image information for detected OS image
+                if (osImageIds != null)
+                {
+                    foreach (string osImageId in osImageIds)
+                    {
+                        //' Get the ImageIndex property from task sequence step
+                        IResultObject tsPackage = connection.GetInstance(String.Format("SMS_TaskSequencePackage.PackageID='{0}'", tsPackageId));
+                        string imageIndex = GetTSIndexSelection(tsPackage);
+
+                        string imageQuery = String.Format("SELECT * FROM SMS_ImageInformation WHERE PackageID like '{0}' AND Index like '{1}'", osImageId, imageIndex);
+                        IResultObject osImageProps = connection.QueryProcessor.ExecuteQuery(imageQuery);
+
+                        if (osImageProps != null)
+                        {
+                            foreach (IResultObject prop in osImageProps)
+                            {
+                                CMOSImage osImage = new CMOSImage()
+                                {
+                                    Version = prop["OSVersion"].StringValue,
+                                    Architecture = prop["Architecture"].StringValue,
+                                    PackageID = prop["PackageID"].StringValue
+                                };
+                                osImageList.Add(osImage);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return osImageList;
+        }
+
         private string GetTSIndexSelection(IResultObject taskSequencePackage)
         {
             //' Connect to SMS Provider
@@ -3565,7 +4097,7 @@ namespace ConfigMgrWebService
             }
         }
 
-        private string GetCMCompterResourceId(string computerName)
+        private string GetCMComputerResourceId(string computerName)
         {
             //' Connect to SMS Provider
             SmsProvider smsProvider = new SmsProvider();
@@ -3620,6 +4152,11 @@ namespace ConfigMgrWebService
             }
 
             return defaultNamingContext;
+        }
+
+        private string GetADDomainName()
+        {
+            return Domain.GetComputerDomain().Name;
         }
 
         private string GetADObject(string name, ADObjectClass objectClass, ADObjectType objectType)
@@ -3854,25 +4391,32 @@ namespace ConfigMgrWebService
             int lastNumber = list.Last();
 
             //' Range that contains all numbers in the interval
-            IEnumerable<int> range = Enumerable.Range(firstNumber, lastNumber - firstNumber);
-
-            if (range.Contains<int>(1) == false)
+            if (firstNumber == 1 && lastNumber == 1)
             {
-                firstMissingNumber = 1;
+                firstMissingNumber = 2;
             }
             else
             {
-                if (range != null)
+                IEnumerable<int> range = Enumerable.Range(firstNumber, lastNumber - firstNumber);
+
+                if (range.Contains<int>(1) == false)
                 {
-                    //' Getting the set difference
-                    IEnumerable<int> setDifference = range.Except(list);
-                    if (!IsNullOrEmpty<int>(setDifference))
+                    firstMissingNumber = 1;
+                }
+                else
+                {
+                    if (range != null)
                     {
-                        firstMissingNumber = range.Except(list).First();
-                    }
-                    else
-                    {
-                        firstMissingNumber = FindNextNumber(list);
+                        //' Getting the set difference
+                        IEnumerable<int> setDifference = range.Except(list);
+                        if (!IsNullOrEmpty<int>(setDifference))
+                        {
+                            firstMissingNumber = range.Except(list).First();
+                        }
+                        else
+                        {
+                            firstMissingNumber = FindNextNumber(list);
+                        }
                     }
                 }
             }
