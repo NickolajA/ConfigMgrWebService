@@ -19,6 +19,7 @@ using System.DirectoryServices.AccountManagement;
 using System.Net;
 using System.Security;
 using System.Runtime.InteropServices;
+using System.Xml.Serialization;
 
 namespace ConfigMgrWebService
 {
@@ -1007,6 +1008,658 @@ namespace ConfigMgrWebService
             MethodEnd(method);
             return collectionList;
         }
+
+        [WebMethod(Description = "Get collection variable for device by Name")]
+        public CMDevice GetCMDeviceVariableByName(string secret, string computername = null)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            CMDevice computerproperties = new CMDevice();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                if (computername != null)
+                {
+                    //' Connect to SMS Provider
+                    SmsProvider smsProvider = new SmsProvider();
+                    WqlConnectionManager connection = smsProvider.Connect(siteServer);
+                    string computerquery = string.Empty;
+                    computerquery = String.Format("SELECT * FROM SMS_R_SYSTEM WHERE Name='{0}'", computername);
+                    IResultObject computerinfos = connection.QueryProcessor.ExecuteQuery(computerquery);
+
+                    foreach (IResultObject computerinfo in computerinfos)
+                    {
+                        if (computerinfo["ResourceID"].StringValue != null)
+                        {
+                            string computervarquery = string.Empty;
+                            computervarquery = String.Format("SELECT * FROM SMS_MachineSettings WHERE ResourceID='{0}'", computerinfo["ResourceID"].StringValue);
+                            IResultObject computervarinfos = connection.QueryProcessor.ExecuteQuery(computervarquery);
+                            foreach (IResultObject computervarinfo in computervarinfos)
+                            {
+                                computervarinfo.Get();
+                                if (computervarinfo["MachineVariables"].ObjectValue != null)
+                                {
+                                    List<CMDeviceVariable> variablelist = new List<CMDeviceVariable>();
+                                    foreach (IResultObject computervariable in computervarinfo.GetArrayItems("MachineVariables"))
+                                    {
+                                        if (computervariable["IsMasked"].BooleanValue == false)
+                                        {
+                                            CMDeviceVariable devicevariable = new CMDeviceVariable
+                                            {
+                                                Name = computervariable["Name"].StringValue,
+                                                Value = computervariable["Value"].StringValue
+                                            };
+                                            variablelist.Add(devicevariable);
+                                        }
+                                    }
+                                    computerproperties.Name = computerinfo["Name"].StringValue;
+                                    computerproperties.Variable = variablelist;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            MethodEnd(method);
+            return computerproperties;
+        }
+
+        [WebMethod(Description = "Get collection variable for device by ID")]
+        public CMDeviceByID GetCMDeviceVariableByID(string secret, string resourceid = null)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            CMDeviceByID computerproperties = new CMDeviceByID();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                if (resourceid != null)
+                {
+                    //' Connect to SMS Provider
+                    SmsProvider smsProvider = new SmsProvider();
+                    WqlConnectionManager connection = smsProvider.Connect(siteServer);
+                    string computervarquery = string.Empty;
+                    computervarquery = String.Format("SELECT * FROM SMS_MachineSettings WHERE ResourceID='{0}'", resourceid);
+                    IResultObject computervarinfos = connection.QueryProcessor.ExecuteQuery(computervarquery);
+                    foreach (IResultObject computervarinfo in computervarinfos)
+                    {
+                        computervarinfo.Get();
+                        if (computervarinfo["MachineVariables"].ObjectValue != null)
+                        {
+                            List<CMDeviceVariable> variablelist = new List<CMDeviceVariable>();
+                            foreach (IResultObject computervariable in computervarinfo.GetArrayItems("MachineVariables"))
+                            {
+                                if (computervariable["IsMasked"].BooleanValue == false)
+                                {
+                                    CMDeviceVariable devicevariable = new CMDeviceVariable
+                                    {
+                                        Name = computervariable["Name"].StringValue,
+                                        Value = computervariable["Value"].StringValue
+                                    };
+                                    variablelist.Add(devicevariable);
+                                }
+                            }
+                            computerproperties.ResourceID = computervarinfo["ResourceID"].StringValue;
+                            computerproperties.Variable = variablelist;
+                        }
+                    }
+                }
+            }
+            MethodEnd(method);
+            return computerproperties;
+        }
+
+        [WebMethod(Description = "Get collection variable for filter collection or all collections")]
+        public List<CMCollectionVariables> GetCMCollectionVariableByName(string secret, CMCollectionType collectiontype, string[] filter = null)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct list object
+            List<CMCollectionVariables> collectionList = new List<CMCollectionVariables>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                string collectionQuery = string.Empty;
+                string collectionsettingsQuery = string.Empty;
+
+                if (filter == null || filter.All(item => string.IsNullOrEmpty(item)))
+                {
+                    collectionQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType='{0:D}'", collectiontype);
+                }
+                else
+                {
+                    collectionQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType='{0:D}' AND Name LIKE '%{1}%'", collectiontype, string.Join("%' OR Name LIKE '%", filter));
+                }
+
+                IResultObject tmpcollections = connection.QueryProcessor.ExecuteQuery(collectionQuery);
+
+                List<string> collectionIDfilter = new List<string>();
+                foreach (IResultObject tmpcollection in tmpcollections)
+                {
+                    CMCollectionVariables tmpobj = new CMCollectionVariables
+                    {
+                        Name = tmpcollection["Name"].StringValue,
+                        CollectionID = tmpcollection["CollectionID"].StringValue
+                    };
+                    collectionList.Add(tmpobj);
+                    collectionIDfilter.Add(tmpobj.CollectionID);
+
+                }
+
+                if (collectionIDfilter != null || collectionIDfilter.All(item => string.IsNullOrEmpty(item)))
+                {
+                    collectionsettingsQuery = String.Format("SELECT * FROM SMS_CollectionSettings WHERE CollectionID IN ('{0}')", string.Join("','", collectionIDfilter));
+                    IResultObject collectionsSettings = connection.QueryProcessor.ExecuteQuery(collectionsettingsQuery);
+                    foreach (IResultObject collectionsettings in collectionsSettings)
+                    {
+                        collectionsettings.Get();
+                        List<CMVariables> allvariables = new List<CMVariables>();
+                        if (collectionsettings["CollectionVariables"].ObjectValue != null)
+                        {
+                            foreach (IResultObject varobject in collectionsettings.GetArrayItems("CollectionVariables"))
+                            {
+                                if (varobject["IsMasked"].BooleanValue == false)
+                                {
+                                    CMVariables tmpvar = new CMVariables
+                                    {
+                                        Name = varobject["Name"].StringValue,
+                                        Value = varobject["Value"].StringValue
+                                    };
+                                    allvariables.Add(tmpvar);
+                                }
+                            }
+                        }
+
+                        foreach (CMCollectionVariables collInList in collectionList)
+                        {
+                            if (collInList.CollectionID == collectionsettings["CollectionID"].StringValue)
+                            {
+                                collInList.Variable = allvariables;
+                            }
+                        }
+
+                    }
+                }
+
+            }
+
+            MethodEnd(method);
+            return collectionList;
+        }
+
+        [WebMethod(Description = "Get collection variable for filter collection or all collections")]
+        public List<CMVariablesSettings> GetCMCollectionVariableByID(string secret, string[] filter = null)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct list object
+            List<CMVariablesSettings> collectionList = new List<CMVariablesSettings>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                string collectionsettingsQuery = string.Empty;
+
+                if (filter == null || filter.All(item => string.IsNullOrEmpty(item)))
+                {
+                    collectionsettingsQuery = "SELECT * FROM SMS_CollectionSettings";
+                }
+                else
+                {
+                    collectionsettingsQuery = String.Format("SELECT * FROM SMS_CollectionSettings WHERE CollectionID IN ('{0}')", string.Join("','", filter));
+                }
+
+                IResultObject tmpsettings = connection.QueryProcessor.ExecuteQuery(collectionsettingsQuery);
+
+                foreach (IResultObject tmpsetting in tmpsettings)
+                {
+                    tmpsetting.Get();
+                    List<CMVariables> allvariables = new List<CMVariables>();
+                    if (tmpsetting["CollectionVariables"].ObjectValue != null)
+                    {
+                        foreach (IResultObject varobject in tmpsetting.GetArrayItems("CollectionVariables"))
+                        {
+                            if (varobject["IsMasked"].BooleanValue == false)
+                            {
+                                CMVariables tmpvar = new CMVariables
+                                {
+                                    Name = varobject["Name"].StringValue,
+                                    Value = varobject["Value"].StringValue
+                                };
+                                allvariables.Add(tmpvar);
+                            }
+                        }
+                    }
+
+                    CMVariablesSettings collectionsproperties = new CMVariablesSettings
+                    {
+                        CollectionID = tmpsetting["CollectionID"].StringValue,
+                        Variable = allvariables
+                    };
+                    collectionList.Add(collectionsproperties);
+                }
+
+            }
+
+            MethodEnd(method);
+            return collectionList;
+        }
+
+        [WebMethod(Description = "Get collection variable and adhesion rule for filtered collection or all collections")]
+        [XmlInclude(typeof(CMQueryRule))]
+        [XmlInclude(typeof(CMDirectRule))]
+        [XmlInclude(typeof(CMIncludeRule))]
+        [XmlInclude(typeof(CMExcludeRule))]
+        public List<CMCollectionAdvanced> GetCMCollectionAdvancedByName(string secret, CMCollectionType collectiontype, string[] filter = null)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct list object
+            List<CMCollectionAdvanced> collectionList = new List<CMCollectionAdvanced>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                string collectionQuery = string.Empty;
+                string collectionsettingsQuery = string.Empty;
+
+                if (filter == null || filter.All(item => string.IsNullOrEmpty(item)))
+                {
+                    collectionQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType='{0:D}'", collectiontype);
+                }
+                else
+                {
+                    collectionQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType='{0:D}' AND Name LIKE '%{1}%'", collectiontype, string.Join("%' OR Name LIKE '%", filter));
+                }
+
+                IResultObject tmpcollections = connection.QueryProcessor.ExecuteQuery(collectionQuery);
+
+                List<string> collectionIDfilter = new List<string>();
+                ArrayList tmpcollectionList = new ArrayList();
+                foreach (IResultObject tmpcollection in tmpcollections)
+                {
+                    tmpcollectionList.Add(tmpcollection);
+                    collectionIDfilter.Add(tmpcollection["CollectionID"].StringValue);
+                }
+
+                if (collectionIDfilter != null || collectionIDfilter.All(item => string.IsNullOrEmpty(item)))
+                {
+                    collectionsettingsQuery = String.Format("SELECT * FROM SMS_CollectionSettings WHERE CollectionID IN ('{0}')", string.Join("','", collectionIDfilter));
+                    IResultObject collectionsSettings = connection.QueryProcessor.ExecuteQuery(collectionsettingsQuery);
+                    List<CMVariablesSettings> collectionssettings = new List<CMVariablesSettings>();
+                    foreach (IResultObject collectionsettings in collectionsSettings)
+                    {
+                        collectionsettings.Get();
+                        List<CMVariables> allvariables = new List<CMVariables>();
+                        if (collectionsettings["CollectionVariables"].ObjectValue != null)
+                        {
+
+                            foreach (IResultObject varobject in collectionsettings.GetArrayItems("CollectionVariables"))
+                            {
+                                if (varobject["Ismasked"].BooleanValue == false)
+                                {
+                                    CMVariables tmpvar = new CMVariables
+                                    {
+                                        Name = varobject["Name"].StringValue,
+                                        Value = varobject["Value"].StringValue
+                                    };
+                                    allvariables.Add(tmpvar);
+                                }
+                            }
+                        }
+
+                        CMVariablesSettings collectionsproperties = new CMVariablesSettings
+                        {
+                            CollectionID = collectionsettings["CollectionID"].StringValue,
+                            Variable = allvariables
+                        };
+                        collectionssettings.Add(collectionsproperties);
+                    }
+
+                    foreach (IResultObject tmpcollectionlist in tmpcollectionList)
+                    {
+                        tmpcollectionlist.Get();
+                        ArrayList collectionrulelist = new ArrayList();
+                        if (tmpcollectionlist["CollectionRules"].ObjectValue != null)
+                        {
+                            foreach (IResultObject collectionrule in tmpcollectionlist.GetArrayItems("CollectionRules"))
+                            {
+                                if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleQuery")
+                                {
+                                    CMQueryRule tmpcollectionrule = new CMQueryRule
+                                    {
+                                        RuleType = collectionrule["__CLASS"].StringValue,
+                                        RuleName = collectionrule["RuleName"].StringValue,
+                                        QueryID = collectionrule["QueryID"].StringValue,
+                                        QueryExpression = collectionrule["QueryExpression"].StringValue
+                                    };
+                                    collectionrulelist.Add(tmpcollectionrule);
+                                }
+                                else if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleDirect")
+                                {
+                                    CMDirectRule tmpcollectionrule = new CMDirectRule
+                                    {
+                                        RuleType = collectionrule["__CLASS"].StringValue,
+                                        RuleName = collectionrule["RuleName"].StringValue,
+                                        ResourceClassName = collectionrule["ResourceClassName"].StringValue,
+                                        ResourceID = collectionrule["ResourceID"].StringValue
+                                    };
+                                    collectionrulelist.Add(tmpcollectionrule);
+                                }
+                                else if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleIncludeCollection")
+                                {
+                                    CMIncludeRule tmpcollectionrule = new CMIncludeRule
+                                    {
+                                        RuleType = collectionrule["__CLASS"].StringValue,
+                                        RuleName = collectionrule["RuleName"].StringValue,
+                                        IncludeCollectionID = collectionrule["IncludeCollectionID"].StringValue
+                                    };
+                                    collectionrulelist.Add(tmpcollectionrule);
+                                }
+                                else
+                                {
+                                    CMExcludeRule tmpcollectionrule = new CMExcludeRule
+                                    {
+                                        RuleType = collectionrule["__CLASS"].StringValue,
+                                        RuleName = collectionrule["RuleName"].StringValue,
+                                        ExcludeCollectionID = collectionrule["ExcludeCollectionID"].StringValue
+                                    };
+                                    collectionrulelist.Add(tmpcollectionrule);
+                                }
+                            }
+                        }
+
+                        foreach (CMVariablesSettings collsetting in collectionssettings)
+                        {
+                            if (collsetting.CollectionID == tmpcollectionlist["CollectionID"].StringValue)
+                            {
+                                CMCollectionAdvanced tmpcollectionadvanced = new CMCollectionAdvanced
+                                {
+                                    Name = tmpcollectionlist["Name"].StringValue,
+                                    CollectionID = tmpcollectionlist["CollectionID"].StringValue,
+                                    Variable = collsetting.Variable,
+                                    AdhesionRules = collectionrulelist
+                                };
+                                collectionList.Add(tmpcollectionadvanced);
+                            }
+                        }
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return collectionList;
+        }
+
+        [WebMethod(Description = "Get collection variable and adhesion rule for filtered collection or all collections")]
+        [XmlInclude(typeof(CMQueryRule))]
+        [XmlInclude(typeof(CMDirectRule))]
+        [XmlInclude(typeof(CMIncludeRule))]
+        [XmlInclude(typeof(CMExcludeRule))]
+        public List<CMCollectionAdvanced> GetCMCollectionAdvancedByID(string secret, CMCollectionType collectiontype, string[] filter = null)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct list object
+            List<CMCollectionAdvanced> collectionList = new List<CMCollectionAdvanced>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                string collectionQuery = string.Empty;
+                string collectionsettingsQuery = string.Empty;
+
+                if (filter == null || filter.All(item => string.IsNullOrEmpty(item)))
+                {
+                    collectionQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType='{0:D}'", collectiontype);
+                    collectionsettingsQuery = "SELECT * FROM SMS_CollectionSettings";
+                }
+                else
+                {
+                    collectionQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType='{0:D}' AND CollectionID IN ('{1}')", collectiontype, string.Join("','", filter));
+                    collectionsettingsQuery = String.Format("SELECT * FROM SMS_CollectionSettings WHERE CollectionID IN ('{0}')", string.Join("','", filter));
+                }
+
+                IResultObject collections = connection.QueryProcessor.ExecuteQuery(collectionQuery);
+                IResultObject tmpsettings = connection.QueryProcessor.ExecuteQuery(collectionsettingsQuery);
+
+                List<CMVariablesSettings> collectionssettings = new List<CMVariablesSettings>();
+
+                foreach (IResultObject tmpsetting in tmpsettings)
+                {
+                    tmpsetting.Get();
+                    List<CMVariables> allvariables = new List<CMVariables>();
+                    if (tmpsetting["CollectionVariables"].ObjectValue != null)
+                    {
+                        foreach (IResultObject varobject in tmpsetting.GetArrayItems("CollectionVariables"))
+                        {
+                            if (varobject["IsMasked"].BooleanValue == false)
+                            {
+                                CMVariables tmpvar = new CMVariables
+                                {
+                                    Name = varobject["Name"].StringValue,
+                                    Value = varobject["Value"].StringValue
+                                };
+                                allvariables.Add(tmpvar);
+                            }
+                        }
+                    }
+
+                    CMVariablesSettings collectionsproperties = new CMVariablesSettings
+                    {
+                        CollectionID = tmpsetting["CollectionID"].StringValue,
+                        Variable = allvariables
+                    };
+                    collectionssettings.Add(collectionsproperties);
+                }
+
+                foreach (IResultObject collection in collections)
+                {
+                    collection.Get();
+                    List<CMVariables> variable = new List<CMVariables>();
+                    foreach (CMVariablesSettings collectionsetting in collectionssettings)
+                    {
+                        if (collectionsetting.CollectionID == collection["CollectionID"].StringValue)
+                        {
+                            variable = collectionsetting.Variable;
+                        }
+                    }
+
+                    ArrayList collectionrulelist = new ArrayList();
+                    if (collection["CollectionRules"].ObjectValue != null)
+                    {
+                        foreach (IResultObject collectionrule in collection.GetArrayItems("CollectionRules"))
+                        {
+                            if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleQuery")
+                            {
+                                CMQueryRule tmpcollectionrule = new CMQueryRule
+                                {
+                                    RuleType = collectionrule["__CLASS"].StringValue,
+                                    RuleName = collectionrule["RuleName"].StringValue,
+                                    QueryID = collectionrule["QueryID"].StringValue,
+                                    QueryExpression = collectionrule["QueryExpression"].StringValue
+                                };
+                                collectionrulelist.Add(tmpcollectionrule);
+                            }
+                            else if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleDirect")
+                            {
+                                CMDirectRule tmpcollectionrule = new CMDirectRule
+                                {
+                                    RuleType = collectionrule["__CLASS"].StringValue,
+                                    RuleName = collectionrule["RuleName"].StringValue,
+                                    ResourceClassName = collectionrule["ResourceClassName"].StringValue,
+                                    ResourceID = collectionrule["ResourceID"].StringValue
+                                };
+                                collectionrulelist.Add(tmpcollectionrule);
+                            }
+                            else if (collectionrule["__CLASS"].StringValue == "SMS_CollectionRuleIncludeCollection")
+                            {
+                                CMIncludeRule tmpcollectionrule = new CMIncludeRule
+                                {
+                                    RuleType = collectionrule["__CLASS"].StringValue,
+                                    RuleName = collectionrule["RuleName"].StringValue,
+                                    IncludeCollectionID = collectionrule["IncludeCollectionID"].StringValue
+                                };
+                                collectionrulelist.Add(tmpcollectionrule);
+                            }
+                            else
+                            {
+                                CMExcludeRule tmpcollectionrule = new CMExcludeRule
+                                {
+                                    RuleType = collectionrule["__CLASS"].StringValue,
+                                    RuleName = collectionrule["RuleName"].StringValue,
+                                    ExcludeCollectionID = collectionrule["ExcludeCollectionID"].StringValue
+                                };
+                                collectionrulelist.Add(tmpcollectionrule);
+                            }
+                        }
+                    }
+
+                    CMCollectionAdvanced collectioninfos = new CMCollectionAdvanced
+                    {
+                        Name = collection["Name"].StringValue,
+                        CollectionID = collection["CollectionID"].StringValue,
+                        Variable = variable,
+                        AdhesionRules = collectionrulelist
+                    };
+                    collectionList.Add(collectioninfos);
+
+                }
+            }
+
+            MethodEnd(method);
+            return collectionList;
+        }
+
+        [WebMethod(Description = "Get SCCM Console Node objects")]
+        public List<CMNode> GetCMNodeObjects(string secret, CMNodeObjectType objecttype = CMNodeObjectType.SMS_Collection_Device)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct list object
+            List<CMNode> folderList = new List<CMNode>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                //' folders query
+                string deviceFolderNodesQuery = String.Format("Select * From SMS_ObjectContainerNode Where ObjectType='{0:D}'", objecttype);
+                string deviceFolderItemsQuery = String.Format("Select * From SMS_ObjectContainerItem Where ObjectType='{0:D}'", objecttype);
+
+                //
+                IResultObject foldernodes = connection.QueryProcessor.ExecuteQuery(deviceFolderNodesQuery);
+                IResultObject tmpfolderitems = connection.QueryProcessor.ExecuteQuery(deviceFolderItemsQuery);
+
+                ArrayList folderitems = new ArrayList();
+                foreach (IResultObject tmpfolderitem in tmpfolderitems)
+                {
+                    folderitems.Add(tmpfolderitem);
+                }
+
+                foreach (IResultObject foldernode in foldernodes)
+                {
+                    List<string> MemberIDTmpArray = new List<string>();
+                    List<string> MemberGuidTmpArray = new List<string>();
+                    List<string> InstanceKeyTmpArray = new List<string>();
+
+                    foreach (IResultObject folderitem in folderitems)
+                    {
+                        if (folderitem["ContainerNodeID"].StringValue == foldernode["ContainerNodeID"].StringValue)
+                        {
+                            MemberIDTmpArray.Add(folderitem["MemberID"].StringValue);
+                            MemberGuidTmpArray.Add(folderitem["MemberGuid"].StringValue);
+                            InstanceKeyTmpArray.Add(folderitem["InstanceKey"].StringValue);
+                        }
+                    }
+
+                    CMNode tmpfolder = new CMNode()
+                    {
+                        Name = foldernode["Name"].StringValue,
+                        ContainerNodeID = foldernode["ContainerNodeID"].StringValue,
+                        MemberID = MemberIDTmpArray,
+                        MemberGuid = MemberGuidTmpArray,
+                        InstanceKey = InstanceKeyTmpArray,
+                        ParentContainerNodeID = foldernode["ParentContainerNodeID"].StringValue,
+                        FolderGuid = foldernode["FolderGuid"].StringValue
+                    };
+                    folderList.Add(tmpfolder);
+                }
+
+                foreach (CMNode folder in folderList)
+                {
+                    if (folder.ParentContainerNodeID != "0")
+                    {
+                        CMNode ParentContainerProperties = new CMNode();
+                        foreach (CMNode f in folderList)
+                        {
+                            if (f.ContainerNodeID == folder.ParentContainerNodeID)
+                            {
+                                ParentContainerProperties = f;
+                            }
+                        }
+
+                        bool ParentContainer = true;
+                        while (ParentContainer == true)
+                        {
+                            folder.Path = (ParentContainerProperties.Name + "\\" + folder.Path);
+                            if (ParentContainerProperties.ParentContainerNodeID != "0")
+                            {
+                                foreach (CMNode f1 in folderList)
+                                {
+                                    if (f1.ContainerNodeID == ParentContainerProperties.ParentContainerNodeID)
+                                    {
+                                        ParentContainerProperties = f1;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                ParentContainer = false;
+                                folder.Path = ("Root\\" + folder.Path + folder.Name);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        folder.Path = ("Root\\" + folder.Name);
+                    }
+                }
+            }
+            MethodEnd(method);
+            return folderList;
+        }
+
+
 
         [WebMethod(Description = "Update membership of a specific collection")]
         public bool UpdateCMCollectionMembership(string secret, string collectionId)
