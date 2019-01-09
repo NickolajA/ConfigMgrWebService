@@ -19,10 +19,27 @@ using System.DirectoryServices.AccountManagement;
 using System.Net;
 using System.Security;
 using System.Runtime.InteropServices;
+using System.Globalization;
+using SqlExtensions;
+
+namespace SqlExtensions
+{
+    public static class SqlExtension
+    {
+        /// <summary>
+        ///  Extension method for reading int's that potentially may be NULL. Source from: https://stackoverflow.com/questions/18530627/nullable-integer-values-from-reader
+        /// </summary>
+        public static int GetDBInt(this SqlDataReader reader, string colName)
+        {
+            var colIndex = reader.GetOrdinal(colName);
+            return !reader.IsDBNull(colIndex) ? reader.GetInt32(colIndex) : default(int);
+        }
+    }
+}
 
 namespace ConfigMgrWebService
 {
-    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (1.6.0)", Namespace = "http://www.scconfigmgr.com")]
+    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (1.7.0)", Namespace = "http://www.scconfigmgr.com")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
     [System.ComponentModel.ToolboxItem(false)]
 
@@ -35,6 +52,7 @@ namespace ConfigMgrWebService
         private string sqlServer = WebConfigurationManager.AppSettings["SQLServer"];
         private string sqlInstance = WebConfigurationManager.AppSettings["SQLInstance"];
         private string mdtDatabase = WebConfigurationManager.AppSettings["MDTDatabase"];
+        private string monitorDatabase = WebConfigurationManager.AppSettings["OSDMonitorDatabase"];
 
         //' Enums
         public enum ADObjectClass
@@ -102,6 +120,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Query for user relationship instances
                 SelectQuery relationQuery = new SelectQuery("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceName like '" + deviceName + "'");
                 ManagementScope managementScope = new ManagementScope("\\\\" + siteServer + "\\root\\SMS\\site_" + siteCode);
@@ -135,43 +156,64 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get all user device relationsship for specified resource id
-                string relQuery = String.Format("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceID = '{0}'", resourceId);
-                IResultObject relResults = connection.QueryProcessor.ExecuteQuery(relQuery);
-
-                if (relResults != null)
+                try
                 {
-                    foreach (IResultObject result in relResults)
-                    {
-                        //' Get display name for user
-                        string fullUserName = string.Empty;
-                        string userQuery = String.Format("SELECT * FROM SMS_R_User WHERE UniqueUserName = '{0}'", result["UniqueUserName"].StringValue.Replace("\\", "\\\\"));
-                        IResultObject userResults = connection.QueryProcessor.ExecuteQuery(userQuery);
+                    //' Get all user device relationsship for specified resource id
+                    string relQuery = String.Format("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceID = '{0}'", resourceId);
+                    IResultObject relResults = connection.QueryProcessor.ExecuteQuery(relQuery);
 
-                        if (userResults != null)
+                    if (relResults != null)
+                    {
+                        foreach (IResultObject result in relResults)
                         {
-                            foreach (IResultObject user in userResults)
+                            try
                             {
-                                fullUserName = user["FullUserName"].StringValue;
+                                //' Get display name for user
+                                string fullUserName = string.Empty;
+                                string userQuery = String.Format("SELECT * FROM SMS_R_User WHERE UniqueUserName = '{0}'", result["UniqueUserName"].StringValue.Replace("\\", "\\\\"));
+                                IResultObject userResults = connection.QueryProcessor.ExecuteQuery(userQuery);
+
+                                if (userResults != null)
+                                {
+                                    foreach (IResultObject user in userResults)
+                                    {
+                                        fullUserName = user["FullUserName"].StringValue;
+                                    }
+                                }
+
+                                //' Construct new relation object for return value
+                                CMUserDeviceRelation relation = new CMUserDeviceRelation()
+                                {
+                                    CreationTime = result["CreationTime"].DateTimeValue,
+                                    ResourceId = result["ResourceID"].StringValue,
+                                    ResourceName = result["ResourceName"].StringValue,
+                                    UniqueUserName = result["UniqueUserName"].StringValue,
+                                    FullUserName = fullUserName
+                                };
+
+                                relations.Add(relation);
+                            }
+                            catch (Exception ex)
+                            {
+                                WriteEventLog($"An error occurred while querying unique user name. Error message: { ex.Message } ", EventLogEntryType.Error);
                             }
                         }
-
-                        //' Construct new relation object for return value
-                        CMUserDeviceRelation relation = new CMUserDeviceRelation()
-                        {
-                            CreationTime = result["CreationTime"].DateTimeValue,
-                            ResourceId = result["ResourceID"].StringValue,
-                            ResourceName = result["ResourceName"].StringValue,
-                            UniqueUserName = result["UniqueUserName"].StringValue,
-                            FullUserName = fullUserName
-                        };
-
-                        relations.Add(relation);
                     }
+                    else
+                    {
+                        WriteEventLog("Query for user machine relations returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for user machine relations. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -191,6 +233,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Query for device relationship instances
                 SelectQuery relationQuery = new SelectQuery("SELECT * FROM SMS_UserMachineRelationship WHERE UniqueUserName like '" + userName + "'");
                 ManagementScope managementScope = new ManagementScope("\\\\" + siteServer + "\\root\\SMS\\site_" + siteCode);
@@ -224,6 +269,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Query for specified user
                 SelectQuery userQuery = new SelectQuery("SELECT * FROM SMS_R_User WHERE UserName like '" + userName + "'");
                 ManagementScope managementScope = new ManagementScope("\\\\" + siteServer + "\\root\\SMS\\site_" + siteCode);
@@ -304,6 +352,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Query for specified device name
                 SelectQuery deviceQuery = new SelectQuery("SELECT * FROM SMS_R_System WHERE Name like '" + deviceName + "'");
                 ManagementScope managementScope = new ManagementScope("\\\\" + siteServer + "\\root\\SMS\\site_" + siteCode);
@@ -375,37 +426,42 @@ namespace ConfigMgrWebService
             MethodBegin(method);
 
             //' Construct hidden task sequences list
-            var hiddenTaskSequences = new List<CMTaskSequence>();
+            List<CMTaskSequence> hiddenTaskSequences = new List<CMTaskSequence>();
 
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Define query string
-                string query = "SELECT * FROM SMS_AdvertisementInfo WHERE PackageType = 4";
-
-                //' Query for Task Sequence package
-                IResultObject queryResults = connection.QueryProcessor.ExecuteQuery(query);
-
-                foreach (IResultObject queryResult in queryResults)
+                try
                 {
-                    //' Collect property values from instance
-                    string taskSequenceName = queryResult["PackageName"].StringValue;
-                    string advertId = queryResult["AdvertisementId"].StringValue;
-                    int advertFlags = queryResult["AdvertFlags"].IntegerValue;
+                    //' Query for task sequence package
+                    string query = "SELECT * FROM SMS_AdvertisementInfo WHERE PackageType = 4";
+                    IResultObject queryResults = connection.QueryProcessor.ExecuteQuery(query);
 
-                    //' Construct new taskSequence class object and define properties
-                    CMTaskSequence returnObject = new CMTaskSequence();
-                    returnObject.PackageName = taskSequenceName;
-                    returnObject.AdvertFlags = advertFlags;
-                    returnObject.AdvertisementId = advertId;
+                    foreach (IResultObject queryResult in queryResults)
+                    {
+                        //' Construct new taskSequence class object and define properties
+                        CMTaskSequence taskSequence = new CMTaskSequence
+                        {
+                            PackageName = queryResult["PackageName"].StringValue,
+                            AdvertFlags = queryResult["AdvertFlags"].IntegerValue,
+                            AdvertisementId = queryResult["AdvertisementId"].StringValue
+                        };
 
-                    //' Add object to list if bit exists
-                    if ((advertFlags & 0x20000000) != 0)
-                        hiddenTaskSequences.Add(returnObject);
+                        //' Add object to list if bit exists
+                        if ((taskSequence.AdvertFlags & 0x20000000) != 0)
+                            hiddenTaskSequences.Add(taskSequence);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for hidden task sequence deployments. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -425,23 +481,37 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Query for device resource
-                string query = String.Format("SELECT * FROM SMS_R_System WHERE SMBIOSGUID like '{0}'", uuid);
-                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
-
-                string resourceId = string.Empty;
-
-                if (result != null)
+                try
                 {
-                    foreach (IResultObject device in result)
+                    //' Query for device resource
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE SMBIOSGUID like '{0}'", uuid);
+                    IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                    string resourceId = string.Empty;
+
+                    if (result != null)
                     {
-                        int id = device["ResourceId"].IntegerValue;
-                        returnValue = id.ToString();
+                        foreach (IResultObject device in result)
+                        {
+                            int id = device["ResourceId"].IntegerValue;
+                            returnValue = id.ToString();
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for device resource id returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying device resource id. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -461,23 +531,37 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Query for device resource
-                string query = String.Format("SELECT * FROM SMS_R_System WHERE MacAddresses like '{0}'", macAddress);
-                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
-
-                string resourceId = string.Empty;
-
-                if (result != null)
+                try
                 {
-                    foreach (IResultObject device in result)
+                    //' Query for device resource
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE MacAddresses like '{0}'", macAddress);
+                    IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                    string resourceId = string.Empty;
+
+                    if (result != null)
                     {
-                        int id = device["ResourceId"].IntegerValue;
-                        returnValue = id.ToString();
+                        foreach (IResultObject device in result)
+                        {
+                            int id = device["ResourceId"].IntegerValue;
+                            returnValue = id.ToString();
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for device resource id returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for device resource id. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -497,23 +581,37 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Query for unknown computer resource
-                string query = String.Format("SELECT * FROM SMS_R_UnknownSystem WHERE SMSUniqueIdentifier like '{0}'", uuid);
-                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
-
-                string resourceId = string.Empty;
-
-                if (result != null)
+                try
                 {
-                    foreach (IResultObject device in result)
+                    //' Query for unknown computer resource
+                    string query = String.Format("SELECT * FROM SMS_R_UnknownSystem WHERE SMSUniqueIdentifier like '{0}'", uuid);
+                    IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                    string resourceId = string.Empty;
+
+                    if (result != null)
                     {
-                        int id = device["ResourceId"].IntegerValue;
-                        returnValue = id.ToString();
+                        foreach (IResultObject device in result)
+                        {
+                            int id = device["ResourceId"].IntegerValue;
+                            returnValue = id.ToString();
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for unknown computer resource id returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for unknown computer resource id. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -533,20 +631,128 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Query for device name
-                string query = String.Format("SELECT * FROM SMS_R_System WHERE SMBIOSGUID like '{0}'", uuid);
-                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
-
-                if (result != null)
+                try
                 {
-                    foreach (IResultObject device in result)
+                    //' Query for device name
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE SMBIOSGUID like '{0}'", uuid);
+                    IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                    if (result != null)
                     {
-                        returnValue = device["Name"].StringValue;
+                        foreach (IResultObject device in result)
+                        {
+                            returnValue = device["Name"].StringValue;
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for device name returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for device name. Error message: { ex.Message }", EventLogEntryType.Error);
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get the name of a specific device by ResourceID")]
+        public string GetCMDeviceNameByResourceID(string secret, string resourceId)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                try
+                {
+                    //' Query for device name
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE ResourceID like '{0}'", resourceId);
+                    IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                    if (result != null)
+                    {
+                        foreach (IResultObject device in result)
+                        {
+                            returnValue = device["Name"].StringValue;
+                        }
+                    }
+                    else
+                    {
+                        WriteEventLog("Query for device name returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for device name. Error message: { ex.Message }", EventLogEntryType.Error);
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get the name of a specific device by MACAddress")]
+        public string GetCMDeviceNameByMACAddress(string secret, string macAddress)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                try
+                {
+                    //' Query for device name
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE MACAddresses like '{0}'", macAddress);
+                    IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                    if (result != null)
+                    {
+                        foreach (IResultObject device in result)
+                        {
+                            returnValue = device["Name"].StringValue;
+                        }
+                    }
+                    else
+                    {
+                        WriteEventLog("Query for device name returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for device name. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -566,20 +772,34 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Query for device name
-                string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like '{0}'", computerName);
-                IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
-
-                if (result != null)
+                try
                 {
-                    foreach (IResultObject device in result)
+                    //' Query for device name
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like '{0}'", computerName);
+                    IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                    if (result != null)
                     {
-                        returnValue = device["SMBIOSGUID"].StringValue;
+                        foreach (IResultObject device in result)
+                        {
+                            returnValue = device["SMBIOSGUID"].StringValue;
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for device UUID returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for device UUID. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -599,6 +819,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
@@ -671,6 +894,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
@@ -697,6 +923,63 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Get details about a specific device collection by name")]
+        public List<CMCollection> GetCMCollectionByName(string secret, string name)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct list of CMCollection objects for return value
+            List<CMCollection> collList = new List<CMCollection>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                try
+                {
+                    //' Query for collection object
+                    string query = String.Format("SELECT * FROM SMS_Collection WHERE Name like '%{0}%'", name);
+                    IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                    if (result != null)
+                    {
+                        foreach (IResultObject collection in result)
+                        {
+                            CMCollection coll = new CMCollection
+                            {
+                                Name = collection["Name"].StringValue,
+                                CollectionID = collection["CollectionID"].StringValue,
+                                CollectionType = collection["CollectionType"].StringValue,
+                                LimitingCollectionID = collection["LimitToCollectionID"].StringValue,
+                                ObjectPath = collection["ObjectPath"].StringValue,
+                                RefreshType = collection["RefreshType"].StringValue,
+                                ServiceWindowsCount = collection["ServiceWindowsCount"].StringValue
+                            };
+                            collList.Add(coll);
+                        }
+                    }
+                    else
+                    {
+                        WriteEventLog("Query for collections returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for collections. Error message: { ex.Message }", EventLogEntryType.Error);
+                }
+            }
+
+            MethodEnd(method);
+            return collList;
+        }
+
         [WebMethod(Description = "Get all discovered users")]
         public List<CMUser> GetCMDiscoveredUsers(string secret)
         {
@@ -709,6 +992,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
@@ -770,24 +1056,40 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Query for unique username
-                IResultObject queryResults = null;
-                string query = "SELECT * FROM SMS_R_User";
+                try
+                {
+                    //' Query for unique username
+                    IResultObject queryResults = null;
+                    string query = "SELECT * FROM SMS_R_User";
+                    queryResults = connection.QueryProcessor.ExecuteQuery(query);
 
-                queryResults = connection.QueryProcessor.ExecuteQuery(query);
-                if (queryResults != null)
-                    foreach (IResultObject queryResult in queryResults)
+                    if (queryResults != null)
                     {
-                        //' Collect property values from instance
-                        string uName = queryResult["UserName"].StringValue;
-                        string uniqueUserName = queryResult["UniqueUserName"].StringValue;
-                        if (uName.ToLower() == userName.ToLower())
-                            returnValue = uniqueUserName;
+                        foreach (IResultObject queryResult in queryResults)
+                        {
+                            //' Collect property values from instance
+                            string uName = queryResult["UserName"].StringValue;
+                            string uniqueUserName = queryResult["UniqueUserName"].StringValue;
+                            if (uName.ToLower() == userName.ToLower())
+                                returnValue = uniqueUserName;
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for unique user name returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for unique user name. Error message: { ex.Message }", EventLogEntryType.Error);
+                }
             }
 
             MethodEnd(method);
@@ -806,31 +1108,45 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Query for unique username
-                string query = String.Format("SELECT * FROM SMS_R_User WHERE UserName like '{0}'", samAccountName);
-
-                IResultObject results = connection.QueryProcessor.ExecuteQuery(query);
-                if (results != null)
+                try
                 {
-                    foreach (IResultObject result in results)
-                    {
-                        //' Construct new user object
-                        returnValue = new CMUser();
+                    //' Query for unique username
+                    string query = String.Format("SELECT * FROM SMS_R_User WHERE UserName like '{0}'", samAccountName);
+                    IResultObject results = connection.QueryProcessor.ExecuteQuery(query);
 
-                        //' Set user object properties from query results
-                        returnValue.ResourceId = result["ResourceID"].StringValue;
-                        returnValue.DistinguishedName = result["DistinguishedName"].StringValue;
-                        returnValue.FullDomainName = result["FullDomainName"].StringValue;
-                        returnValue.FullUserName = result["FullUserName"].StringValue;
-                        returnValue.Name = result["Name"].StringValue;
-                        returnValue.UniqueUserName = result["UniqueUserName"].StringValue;
-                        returnValue.UserPrincipalName = result["UserPrincipalName"].StringValue;
-                        returnValue.WindowsNTDomain = result["WindowsNTDomain"].StringValue;
+                    if (results != null)
+                    {
+                        foreach (IResultObject result in results)
+                        {
+                            //' Construct new user object
+                            returnValue = new CMUser();
+
+                            //' Set user object properties from query results
+                            returnValue.ResourceId = result["ResourceID"].StringValue;
+                            returnValue.DistinguishedName = result["DistinguishedName"].StringValue;
+                            returnValue.FullDomainName = result["FullDomainName"].StringValue;
+                            returnValue.FullUserName = result["FullUserName"].StringValue;
+                            returnValue.Name = result["Name"].StringValue;
+                            returnValue.UniqueUserName = result["UniqueUserName"].StringValue;
+                            returnValue.UserPrincipalName = result["UserPrincipalName"].StringValue;
+                            returnValue.WindowsNTDomain = result["WindowsNTDomain"].StringValue;
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for a given user object returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for user objects. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -850,6 +1166,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Construct method parameters
                 Dictionary<string, object> methodParameters = new Dictionary<string, object>();
                 methodParameters.Add("NetBIOSName", computerName);
@@ -878,6 +1197,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
@@ -910,50 +1232,60 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get resource id for given computer name
-                string resourceId = GetCMComputerResourceId(resourceName);
-                if (!String.IsNullOrEmpty(resourceId))
+                try
                 {
-                    //' Initiate collection object
-                    WqlResultObject collection = null;
-
-                    //' Attempt to get collection
-                    string query = String.Format("SELECT * FROM SMS_Collection WHERE CollectionID LIKE '{0}' AND CollectionType = 2", collectionId);
-                    WqlQueryResultsObject collResult = (WqlQueryResultsObject)connection.QueryProcessor.ExecuteQuery(query);
-
-                    if (collResult != null)
+                    //' Get resource id for given computer name
+                    string resourceId = GetCMComputerResourceId(resourceName);
+                    if (!String.IsNullOrEmpty(resourceId))
                     {
-                        foreach (WqlResultObject coll in collResult)
+                        //' Initiate collection object
+                        WqlResultObject collection = null;
+
+                        //' Attempt to get collection
+                        string query = String.Format("SELECT * FROM SMS_Collection WHERE CollectionID LIKE '{0}' AND CollectionType = 2", collectionId);
+                        WqlQueryResultsObject collResult = (WqlQueryResultsObject)connection.QueryProcessor.ExecuteQuery(query);
+
+                        if (collResult != null)
                         {
-                            collection = coll;
-                        }
+                            foreach (WqlResultObject coll in collResult)
+                            {
+                                collection = coll;
+                            }
 
-                        //' Construct new direct membership rule
-                        IResultObject newRule = connection.CreateInstance("SMS_CollectionRuleDirect");
-                        newRule["ResourceClassName"].StringValue = "SMS_R_System";
-                        newRule["ResourceID"].StringValue = resourceId;
-                        newRule["RuleName"].StringValue = resourceName;
+                            //' Construct new direct membership rule
+                            IResultObject newRule = connection.CreateInstance("SMS_CollectionRuleDirect");
+                            newRule["ResourceClassName"].StringValue = "SMS_R_System";
+                            newRule["ResourceID"].StringValue = resourceId;
+                            newRule["RuleName"].StringValue = resourceName;
 
-                        //' Construct params dictionary for method execution
-                        Dictionary<string, object> methodParams = new Dictionary<string, object>();
-                        methodParams.Add("CollectionRule", newRule);
+                            //' Construct params dictionary for method execution
+                            Dictionary<string, object> methodParams = new Dictionary<string, object>();
+                            methodParams.Add("CollectionRule", newRule);
 
-                        //' Execute method to add new direct membership rule
-                        IResultObject result = collection.ExecuteMethod("AddMembershipRule", methodParams);
+                            //' Execute method to add new direct membership rule
+                            IResultObject result = collection.ExecuteMethod("AddMembershipRule", methodParams);
 
-                        //' Refresh collection
-                        if (result["ReturnValue"].IntegerValue == 0)
-                        {
-                            Dictionary<string, object> refreshParams = new Dictionary<string, object>();
-                            collection.ExecuteMethod("RequestRefresh", refreshParams);
+                            //' Refresh collection
+                            if (result["ReturnValue"].IntegerValue == 0)
+                            {
+                                Dictionary<string, object> refreshParams = new Dictionary<string, object>();
+                                collection.ExecuteMethod("RequestRefresh", refreshParams);
 
-                            returnValue = true;
+                                returnValue = true;
+                            }
                         }
                     }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while adding computer to collection. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -973,34 +1305,49 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Device collection query
-                string deviceQuery = string.Empty;
-                if (String.IsNullOrEmpty(filter))
+                try
                 {
-                    deviceQuery = "SELECT * FROM SMS_Collection WHERE CollectionType LIKE '2'";
-                }
-                else
-                {
-                    deviceQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType LIKE '2' AND Name like '%{0}%'", filter);
-                }
-
-                //' Get all device collections
-                IResultObject collections = connection.QueryProcessor.ExecuteQuery(deviceQuery);
-                if (collectionList != null)
-                {
-                    foreach (IResultObject collection in collections)
+                    //' Device collection query
+                    string deviceQuery = string.Empty;
+                    if (String.IsNullOrEmpty(filter))
                     {
-                        CMCollection coll = new CMCollection
-                        {
-                            Name = collection["Name"].StringValue,
-                            CollectionID = collection["CollectionID"].StringValue
-                        };
-                        collectionList.Add(coll);
+                        deviceQuery = "SELECT * FROM SMS_Collection WHERE CollectionType LIKE '2'";
                     }
+                    else
+                    {
+                        deviceQuery = String.Format("SELECT * FROM SMS_Collection WHERE CollectionType LIKE '2' AND Name like '%{0}%'", filter);
+                    }
+
+                    //' Get all device collections
+                    IResultObject collections = connection.QueryProcessor.ExecuteQuery(deviceQuery);
+
+                    if (collectionList != null)
+                    {
+                        foreach (IResultObject collection in collections)
+                        {
+                            CMCollection coll = new CMCollection
+                            {
+                                Name = collection["Name"].StringValue,
+                                CollectionID = collection["CollectionID"].StringValue
+                            };
+                            collectionList.Add(coll);
+                        }
+                    }
+                    else
+                    {
+                        WriteEventLog("Query for device collections returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for device collections. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1020,27 +1367,41 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get collection
-                string query = String.Format("SELECT * FROM SMS_Collection WHERE CollectionID LIKE '{0}'", collectionId);
-                WqlQueryResultsObject collResult = (WqlQueryResultsObject)connection.QueryProcessor.ExecuteQuery(query);
-
-                if (collResult != null)
+                try
                 {
-                    //' Refresh memberships
-                    foreach (WqlResultObject collection in collResult)
-                    {
-                        Dictionary<string, object> refreshParams = new Dictionary<string, object>();
-                        IResultObject exec = collection.ExecuteMethod("RequestRefresh", refreshParams);
+                    //' Get collection
+                    string query = String.Format("SELECT * FROM SMS_Collection WHERE CollectionID LIKE '{0}'", collectionId);
+                    WqlQueryResultsObject collResult = (WqlQueryResultsObject)connection.QueryProcessor.ExecuteQuery(query);
 
-                        if (exec["ReturnValue"].IntegerValue == 0)
+                    if (collResult != null)
+                    {
+                        //' Refresh memberships
+                        foreach (WqlResultObject collection in collResult)
                         {
-                            returnValue = true;
+                            Dictionary<string, object> refreshParams = new Dictionary<string, object>();
+                            IResultObject exec = collection.ExecuteMethod("RequestRefresh", refreshParams);
+
+                            if (exec["ReturnValue"].IntegerValue == 0)
+                            {
+                                returnValue = true;
+                            }
                         }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for collection returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while attempting to update collection membership. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1060,26 +1421,40 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get driver packages
-                string query = String.Format("SELECT * FROM SMS_DriverPackage WHERE Name like '%{0}%' AND PackageType = 3", model);
-                IResultObject driverPackages = connection.QueryProcessor.ExecuteQuery(query);
-
-                if (driverPackages != null)
+                try
                 {
-                    foreach (IResultObject driverPackage in driverPackages)
-                    {
-                        //' Define objects for properties
-                        string packageName = driverPackage["Name"].StringValue;
-                        string packageId = driverPackage["PackageID"].StringValue;
+                    //' Get driver packages
+                    string query = String.Format("SELECT * FROM SMS_DriverPackage WHERE Name like '%{0}%' AND PackageType = 3", model);
+                    IResultObject driverPackages = connection.QueryProcessor.ExecuteQuery(query);
 
-                        //' Add new driver package object to list
-                        CMDriverPackage drvPkg = new CMDriverPackage { PackageName = packageName, PackageID = packageId };
-                        pkgList.Add(drvPkg);
+                    if (driverPackages != null)
+                    {
+                        foreach (IResultObject driverPackage in driverPackages)
+                        {
+                            //' Define objects for properties
+                            string packageName = driverPackage["Name"].StringValue;
+                            string packageId = driverPackage["PackageID"].StringValue;
+
+                            //' Add new driver package object to list
+                            CMDriverPackage drvPkg = new CMDriverPackage { PackageName = packageName, PackageID = packageId };
+                            pkgList.Add(drvPkg);
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for driver package returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for driver package. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1099,39 +1474,54 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get packages
-                string query = String.Format("SELECT * FROM SMS_Package WHERE Name like '%{0}%'", filter);
-                IResultObject packages = connection.QueryProcessor.ExecuteQuery(query);
-
-                if (packages != null)
+                try
                 {
-                    foreach (IResultObject package in packages)
-                    {
-                        //' Define objects for properties
-                        string packageName = package["Name"].StringValue;
-                        string packageId = package["PackageID"].StringValue;
-                        string packageDescription = package["Description"].StringValue;
-                        string packageManufacturer = package["Manufacturer"].StringValue;
-                        string packageLanguage = package["Language"].StringValue;
-                        string packageVersion = package["Version"].StringValue;
-                        DateTime packageCreated = package["SourceDate"].DateTimeValue;
+                    //' Get packages
+                    string query = String.Format("SELECT * FROM SMS_Package WHERE Name like '%{0}%'", filter);
+                    IResultObject packages = connection.QueryProcessor.ExecuteQuery(query);
 
-                        //' Add new package object to list
-                        CMPackage pkg = new CMPackage {
-                            PackageName = packageName,
-                            PackageID = packageId,
-                            PackageDescription = packageDescription,
-                            PackageManufacturer = packageManufacturer,
-                            PackageLanguage = packageLanguage,
-                            PackageVersion = packageVersion,
-                            PackageCreated = packageCreated
-                        };
-                        pkgList.Add(pkg);
+                    if (packages != null)
+                    {
+                        foreach (IResultObject package in packages)
+                        {
+                            //' Define objects for properties
+                            string packageName = package["Name"].StringValue;
+                            string packageId = package["PackageID"].StringValue;
+                            string packageDescription = package["Description"].StringValue;
+                            string packageManufacturer = package["Manufacturer"].StringValue;
+                            string packageLanguage = package["Language"].StringValue;
+                            string packageVersion = package["Version"].StringValue;
+                            DateTime packageCreated = package["SourceDate"].DateTimeValue;
+
+                            //' Add new package object to list
+                            CMPackage pkg = new CMPackage
+                            {
+                                PackageName = packageName,
+                                PackageID = packageId,
+                                PackageDescription = packageDescription,
+                                PackageManufacturer = packageManufacturer,
+                                PackageLanguage = packageLanguage,
+                                PackageVersion = packageVersion,
+                                PackageCreated = packageCreated
+                            };
+                            pkgList.Add(pkg);
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for packages returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for packages. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1151,22 +1541,35 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get unknown device records
-                string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like 'Unknown' AND SMBIOSGUID like '{0}'", uuid);
-                IResultObject unknownRecords = connection.QueryProcessor.ExecuteQuery(query);
-
-                //' Remove all unknown device records matching uuid
-                if (unknownRecords != null)
+                try
                 {
-                    foreach (IResultObject record in unknownRecords)
+                    //' Get unknown device records
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like 'Unknown' AND SMBIOSGUID like '{0}'", uuid);
+                    IResultObject unknownRecords = connection.QueryProcessor.ExecuteQuery(query);
+
+                    if (unknownRecords != null)
                     {
-                        string resourceId = record["ResourceID"].StringValue;
-                        resourceIds.Add(resourceId);
+                        foreach (IResultObject record in unknownRecords)
+                        {
+                            string resourceId = record["ResourceID"].StringValue;
+                            resourceIds.Add(resourceId);
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for unknown device records returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for unknown device records. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1186,12 +1589,25 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                //' Get OS image property info
-                List<string> propsInfo = GetOSImageProperty("OSVersion", tsPackageId);
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                foreach (string prop in propsInfo)
+                try
                 {
-                    osVersionList.Add(prop);
+                    //' Get OS image property info
+                    List<string> propsInfo = GetOSImageProperty("OSVersion", tsPackageId);
+
+                    if (propsInfo != null)
+                    {
+                        foreach (string prop in propsInfo)
+                        {
+                            osVersionList.Add(prop);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for OS image version from task sequence. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1211,12 +1627,25 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                //' Get OS image property info
-                List<string> propsInfo = GetOSImageProperty("Architecture", tsPackageId);
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                foreach (string prop in propsInfo)
+                try
                 {
-                    osArchitectureList.Add(prop);
+                    //' Get OS image property info
+                    List<string> propsInfo = GetOSImageProperty("Architecture", tsPackageId);
+
+                    if (propsInfo != null)
+                    {
+                        foreach (string prop in propsInfo)
+                        {
+                            osArchitectureList.Add(prop);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for OS image architecture from task sequence. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1236,12 +1665,25 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                //' Get OS images
-                List<CMOSImage> osImages = GetOSImage(tsPackageId);
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                foreach (CMOSImage image in osImages)
+                try
                 {
-                    osImageList.Add(image);
+                    //' Get OS images
+                    List<CMOSImage> osImages = GetOSImage(tsPackageId);
+
+                    if (osImages != null)
+                    {
+                        foreach (CMOSImage image in osImages)
+                        {
+                            osImageList.Add(image);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for OS image details from task sequence. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1261,22 +1703,36 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get unknown device records
-                string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like 'Unknown' AND SMBIOSGUID like '{0}'", uuid);
-                IResultObject unknownRecord = connection.QueryProcessor.ExecuteQuery(query);
-
-                //' Remove all unknown device records matching uuid
-                if (unknownRecord != null)
+                try
                 {
-                    foreach (IResultObject record in unknownRecord)
+                    //' Get unknown device records
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like 'Unknown' AND SMBIOSGUID like '{0}'", uuid);
+                    IResultObject unknownRecord = connection.QueryProcessor.ExecuteQuery(query);
+
+                    //' Remove all unknown device records matching uuid
+                    if (unknownRecord != null)
                     {
-                        record.Delete();
-                        records++;
+                        foreach (IResultObject record in unknownRecord)
+                        {
+                            record.Delete();
+                            records++;
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for unknown device record returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while removing unknown device records. Erro message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1296,22 +1752,36 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get device records
-                string query = String.Format("SELECT * FROM SMS_R_System WHERE SMBIOSGUID like '{0}'", uuid);
-                IResultObject deviceRecords = connection.QueryProcessor.ExecuteQuery(query);
-
-                //' Remove all device records matching uuid
-                if (deviceRecords != null)
+                try
                 {
-                    foreach (IResultObject record in deviceRecords)
+                    //' Get device records
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE SMBIOSGUID like '{0}'", uuid);
+                    IResultObject deviceRecords = connection.QueryProcessor.ExecuteQuery(query);
+
+                    //' Remove all device records matching uuid
+                    if (deviceRecords != null)
                     {
-                        record.Delete();
-                        records++;
+                        foreach (IResultObject record in deviceRecords)
+                        {
+                            record.Delete();
+                            records++;
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for device object returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while attempting to remove device object. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1331,22 +1801,36 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get device records
-                string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like '{0}'", name);
-                IResultObject deviceRecords = connection.QueryProcessor.ExecuteQuery(query);
-
-                //' Remove all device records matching name
-                if (deviceRecords != null)
+                try
                 {
-                    foreach (IResultObject record in deviceRecords)
+                    //' Get device records
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like '{0}'", name);
+                    IResultObject deviceRecords = connection.QueryProcessor.ExecuteQuery(query);
+
+                    //' Remove all device records matching name
+                    if (deviceRecords != null)
                     {
-                        record.Delete();
-                        records++;
+                        foreach (IResultObject record in deviceRecords)
+                        {
+                            record.Delete();
+                            records++;
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for device object returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while attempting to remove device object. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1366,22 +1850,36 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get device records
-                string query = String.Format("SELECT * FROM SMS_R_System WHERE ResourceID like '{0}'", resourceId);
-                IResultObject deviceRecords = connection.QueryProcessor.ExecuteQuery(query);
-
-                //' Remove all device records matching resource id
-                if (deviceRecords != null)
+                try
                 {
-                    foreach (IResultObject record in deviceRecords)
+                    //' Get device records
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE ResourceID like '{0}'", resourceId);
+                    IResultObject deviceRecords = connection.QueryProcessor.ExecuteQuery(query);
+
+                    //' Remove all device records matching resource id
+                    if (deviceRecords != null)
                     {
-                        record.Delete();
-                        records++;
+                        foreach (IResultObject record in deviceRecords)
+                        {
+                            record.Delete();
+                            records++;
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for device object returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while attempting to remove device object. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1401,39 +1899,63 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get the device resource instance to be removed from collection
-                CMResource resource = GetCMResource(deviceName, CMObjectType.System, CMResourceProperty.Name);
-                
-                if (resource != null)
+                try
                 {
-                    //' Get the collection instance where the device resource will be removed from
-                    IResultObject collection = GetCMCollection(collectionId, CMCollectionType.DeviceCollection);
+                    //' Get the device resource instance to be removed from collection
+                    CMResource resource = GetCMResource(deviceName, CMObjectType.System, CMResourceProperty.Name);
 
-                    if (collection != null)
+                    if (resource != null)
                     {
-                        //' Construct dictionary for removal parameters
-                        Dictionary<string, object> removeParams = new Dictionary<string, object>();
-
-                        //' Construct new direct rule instance and add as param
-                        IResultObject removalRule = connection.CreateInstance("SMS_CollectionRuleDirect");
-                        removalRule["ResourceID"].StringValue = resource.ResourceID.ToString();
-                        removeParams.Add("collectionRule", removalRule);
-
-                        //' Remove direct rule from collection
-                        IResultObject execute = collection.ExecuteMethod("DeleteMembershipRule", removeParams);
-
-                        if (execute["ReturnValue"].IntegerValue == 0)
+                        try
                         {
-                            Dictionary<string, object> refreshParams = new Dictionary<string, object>();
-                            IResultObject exec = collection.ExecuteMethod("RequestRefresh", refreshParams);
+                            //' Get the collection instance where the device resource will be removed from
+                            IResultObject collection = GetCMCollection(collectionId, CMCollectionType.DeviceCollection);
 
-                            returnValue = true;
+                            if (collection != null)
+                            {
+                                try
+                                {
+                                    //' Construct dictionary for removal parameters
+                                    Dictionary<string, object> removeParams = new Dictionary<string, object>();
+
+                                    //' Construct new direct rule instance and add as param
+                                    IResultObject removalRule = connection.CreateInstance("SMS_CollectionRuleDirect");
+                                    removalRule["ResourceID"].StringValue = resource.ResourceID.ToString();
+                                    removeParams.Add("collectionRule", removalRule);
+
+                                    //' Remove direct rule from collection
+                                    IResultObject execute = collection.ExecuteMethod("DeleteMembershipRule", removeParams);
+
+                                    if (execute["ReturnValue"].IntegerValue == 0)
+                                    {
+                                        Dictionary<string, object> refreshParams = new Dictionary<string, object>();
+                                        IResultObject exec = collection.ExecuteMethod("RequestRefresh", refreshParams);
+
+                                        returnValue = true;
+                                    }
+                                }
+                                catch (System.Exception ex)
+                                {
+                                    WriteEventLog(String.Format("An error occured when attempting to remove device resource from collection. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                                }
+                            }
+                        }
+                        catch (System.Exception ex)
+                        {
+                            WriteEventLog(String.Format("An error occured when attempting to locate device collection. Error message: {0}", ex.Message), EventLogEntryType.Error);
                         }
                     }
+                }
+                catch (System.Exception ex)
+                {
+                    WriteEventLog(String.Format("An error occured when attempting to locate device resource. Error message: {0}", ex.Message), EventLogEntryType.Error);
                 }
             }
 
@@ -1453,27 +1975,41 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get resource id for device
-                CMResource resource = GetCMResource(deviceName, CMObjectType.System, CMResourceProperty.Name);
-
-                //' Construct list of resource ids
-                List<string> resourceList = new List<string>();
-                resourceList.Add(resource.ResourceID.ToString());
-
-                //' Construct in params for method execution
-                Dictionary<string, object> execParams = new Dictionary<string, object>();
-                execParams.Add("ResourceIDs", resourceList.ToArray());
-
-                //' Clear last PXE advertisement for device
-                IResultObject execute = connection.ExecuteMethod("SMS_Collection", "ClearLastNBSAdvForMachines", execParams);
-
-                if (execute["ReturnValue"].IntegerValue == 0)
+                try
                 {
-                    returnValue = true;
+                    //' Get resource id for device
+                    CMResource resource = GetCMResource(deviceName, CMObjectType.System, CMResourceProperty.Name);
+
+                    //' Construct list of resource ids
+                    List<string> resourceList = new List<string>
+                    {
+                        resource.ResourceID.ToString()
+                    };
+
+                    //' Construct in params for method execution
+                    Dictionary<string, object> execParams = new Dictionary<string, object>
+                    {
+                        { "ResourceIDs", resourceList.ToArray() }
+                    };
+
+                    //' Clear last PXE advertisement for device
+                    IResultObject execute = connection.ExecuteMethod("SMS_Collection", "ClearLastNBSAdvForMachines", execParams);
+
+                    if (execute["ReturnValue"].IntegerValue == 0)
+                    {
+                        returnValue = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while attempting to remove PXE advertisement for device. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1493,25 +2029,35 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get collection object
-                IResultObject collection = GetCMCollection(collectionId, CMCollectionType.DeviceCollection);
-
-                //' Construct in params for method execution
-                Dictionary<string, object> execParams = new Dictionary<string, object>();
-
-                //' Clear last PXE advertisement for device
-                if (collection != null)
+                try
                 {
-                    IResultObject execute = collection.ExecuteMethod("ClearLastNBSAdvForCollection", execParams);
+                    //' Get collection object
+                    IResultObject collection = GetCMCollection(collectionId, CMCollectionType.DeviceCollection);
 
-                    if (execute["ReturnValue"].IntegerValue == 0)
+                    //' Construct in params for method execution
+                    Dictionary<string, object> execParams = new Dictionary<string, object>();
+
+                    //' Clear last PXE advertisement for device
+                    if (collection != null)
                     {
-                        returnValue = true;
+                        IResultObject execute = collection.ExecuteMethod("ClearLastNBSAdvForCollection", execParams);
+
+                        if (execute["ReturnValue"].IntegerValue == 0)
+                        {
+                            returnValue = true;
+                        }
                     }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while attempting to remove PXE advertisement for collection. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1531,49 +2077,59 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get source resource
-                CMResource sourceResource = GetCMResource(sourceName, CMObjectType.System, CMResourceProperty.Name);
-
-                //' Get destination resource
-                CMResource destinationResource = GetCMResource(destinationName, CMObjectType.System, CMResourceProperty.Name);
-
-                if (sourceResource != null && destinationResource != null)
+                try
                 {
-                    //' Construct in params for execution
-                    UInt32 migBehavior = 2;
-                    Dictionary<string, object> execParams = new Dictionary<string, object>();
-                    execParams.Add("SourceClientResourceID", sourceResource.ResourceID);
-                    execParams.Add("RestoreClientResourceID", destinationResource.ResourceID);
-                    execParams.Add("MigrationBehavior", migBehavior);
+                    //' Get source resource
+                    CMResource sourceResource = GetCMResource(sourceName, CMObjectType.System, CMResourceProperty.Name);
 
-                    //' Construct a list for holding embedded instances
-                    List<IResultObject> userList = new List<IResultObject>();
+                    //' Get destination resource
+                    CMResource destinationResource = GetCMResource(destinationName, CMObjectType.System, CMResourceProperty.Name);
 
-                    //' Construct embedded instance for user name param info and add to list
-                    IResultObject userInstance = connection.CreateEmbeddedObjectInstance("SMS_StateMigrationUserNames");
-                    userInstance["UserName"].StringValue = userName;
-                    userInstance["LocaleID"].IntegerValue = 0;
-                    userList.Add(userInstance);
-
-                    //' Add list of embedded instances to params
-                    execParams.Add("UserNames", userList);
-
-                    try
+                    if (sourceResource != null && destinationResource != null)
                     {
-                        IResultObject execute = connection.ExecuteMethod("SMS_StateMigration", "AddAssociationEx", execParams);
-                        if (execute["ReturnValue"].IntegerValue == 0)
+                        //' Construct in params for execution
+                        UInt32 migBehavior = 2;
+                        Dictionary<string, object> execParams = new Dictionary<string, object>();
+                        execParams.Add("SourceClientResourceID", sourceResource.ResourceID);
+                        execParams.Add("RestoreClientResourceID", destinationResource.ResourceID);
+                        execParams.Add("MigrationBehavior", migBehavior);
+
+                        //' Construct a list for holding embedded instances
+                        List<IResultObject> userList = new List<IResultObject>();
+
+                        //' Construct embedded instance for user name param info and add to list
+                        IResultObject userInstance = connection.CreateEmbeddedObjectInstance("SMS_StateMigrationUserNames");
+                        userInstance["UserName"].StringValue = userName;
+                        userInstance["LocaleID"].IntegerValue = 0;
+                        userList.Add(userInstance);
+
+                        //' Add list of embedded instances to params
+                        execParams.Add("UserNames", userList);
+
+                        try
                         {
-                            returnValue = true;
+                            IResultObject execute = connection.ExecuteMethod("SMS_StateMigration", "AddAssociationEx", execParams);
+                            if (execute["ReturnValue"].IntegerValue == 0)
+                            {
+                                returnValue = true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteEventLog($"An error occured while executing AddAssociationEx method. Error message: { ex.Message }", EventLogEntryType.Error);
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        WriteEventLog(String.Format("An error occured when attempting to create a computer association. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while attempting to create a computer association. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1593,35 +2149,45 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get source resource
-                CMResource sourceResource = GetCMResource(sourceName, CMObjectType.System, CMResourceProperty.Name);
-
-                //' Get destination resource
-                CMResource destinationResource = GetCMResource(destinationName, CMObjectType.System, CMResourceProperty.Name);
-
-                if (sourceResource != null && destinationResource != null)
+                try
                 {
-                    //' Construct in params for execution
-                    Dictionary<string, object> execParams = new Dictionary<string, object>();
-                    execParams.Add("SourceClientResourceID", sourceResource.ResourceID);
-                    execParams.Add("RestoreClientResourceID", destinationResource.ResourceID);
+                    //' Get source resource
+                    CMResource sourceResource = GetCMResource(sourceName, CMObjectType.System, CMResourceProperty.Name);
 
-                    try
+                    //' Get destination resource
+                    CMResource destinationResource = GetCMResource(destinationName, CMObjectType.System, CMResourceProperty.Name);
+
+                    if (sourceResource != null && destinationResource != null)
                     {
-                        IResultObject execute = connection.ExecuteMethod("SMS_StateMigration", "DeleteAssociation", execParams);
-                        if (execute["ReturnValue"].IntegerValue == 0)
+                        //' Construct in params for execution
+                        Dictionary<string, object> execParams = new Dictionary<string, object>();
+                        execParams.Add("SourceClientResourceID", sourceResource.ResourceID);
+                        execParams.Add("RestoreClientResourceID", destinationResource.ResourceID);
+
+                        try
                         {
-                            returnValue = true;
+                            IResultObject execute = connection.ExecuteMethod("SMS_StateMigration", "DeleteAssociation", execParams);
+                            if (execute["ReturnValue"].IntegerValue == 0)
+                            {
+                                returnValue = true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteEventLog($"An error occured while attempting to execute DeleteAssociation method. Error message: { ex.Message }", EventLogEntryType.Error);
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        WriteEventLog(String.Format("An error occured when attempting to remove a computer association. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while attempting to remove computer association. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1641,22 +2207,36 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get application deployments by collection id
-                string query = String.Format("SELECT * FROM SMS_DeploymentInfo WHERE CollectionID like '{0}' AND DeploymentTypeID like '2'", collId);
-                IResultObject deployments = connection.QueryProcessor.ExecuteQuery(query);
-
-                if (deployments != null)
+                try
                 {
-                    foreach (IResultObject deployment in deployments)
+                    //' Get application deployments by collection id
+                    string query = String.Format("SELECT * FROM SMS_DeploymentInfo WHERE CollectionID like '{0}' AND DeploymentTypeID like '2'", collId);
+                    IResultObject deployments = connection.QueryProcessor.ExecuteQuery(query);
+
+                    if (deployments != null)
                     {
-                        string appName = deployment["TargetName"].StringValue;
-                        appDeployments.Add(appName);
+                        foreach (IResultObject deployment in deployments)
+                        {
+                            string appName = deployment["TargetName"].StringValue;
+                            appDeployments.Add(appName);
+                        }
+                        appDeployments.Sort();
                     }
-                    appDeployments.Sort();
+                    else
+                    {
+                        WriteEventLog("Query for application deployments returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for application deployments. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -1676,32 +2256,46 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get resource
-                CMResource resource = GetCMResource(uuid, CMObjectType.System, CMResourceProperty.SMBIOSGUID);
-
-                //' Get all collections for device
-                string query = String.Format("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID = {0} AND ResourceType = {1:D}", resource.ResourceID, CMObjectType.System);
-                IResultObject collections = connection.QueryProcessor.ExecuteQuery(query);
-
-                if (collections != null)
+                try
                 {
-                    foreach (IResultObject collection in collections)
+                    //' Get resource
+                    CMResource resource = GetCMResource(uuid, CMObjectType.System, CMResourceProperty.SMBIOSGUID);
+
+                    //' Get all collections for device
+                    string query = String.Format("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID = {0} AND ResourceType = {1:D}", resource.ResourceID, CMObjectType.System);
+                    IResultObject collections = connection.QueryProcessor.ExecuteQuery(query);
+
+                    if (collections != null)
                     {
-                        //' Construct new collection object
-                        CMCollection coll = new CMCollection();
+                        foreach (IResultObject collection in collections)
+                        {
+                            //' Construct new collection object
+                            CMCollection coll = new CMCollection();
 
-                        //' Get collection name from collection ID
-                        IResultObject collInstance = GetCMCollection(collection["CollectionID"].StringValue, CMCollectionType.DeviceCollection);
+                            //' Get collection name from collection ID
+                            IResultObject collInstance = GetCMCollection(collection["CollectionID"].StringValue, CMCollectionType.DeviceCollection);
 
-                        //' Add properties to collection object
-                        coll.CollectionID = collection["CollectionID"].StringValue;
-                        coll.Name = collInstance["Name"].StringValue;
-                        returnValue.Add(coll);
+                            //' Add properties to collection object
+                            coll.CollectionID = collection["CollectionID"].StringValue;
+                            coll.Name = collInstance["Name"].StringValue;
+                            returnValue.Add(coll);
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for device collections returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for device collections. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -1721,32 +2315,46 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get resource
-                CMResource resource = GetCMResource(deviceName, CMObjectType.System, CMResourceProperty.Name);
-
-                //' Get all collections for device
-                string query = String.Format("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID = {0} AND ResourceType = {1:D}", resource.ResourceID, CMObjectType.System);
-                IResultObject collections = connection.QueryProcessor.ExecuteQuery(query);
-
-                if (collections != null)
+                try
                 {
-                    foreach (IResultObject collection in collections)
+                    //' Get resource
+                    CMResource resource = GetCMResource(deviceName, CMObjectType.System, CMResourceProperty.Name);
+
+                    //' Get all collections for device
+                    string query = String.Format("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID = {0} AND ResourceType = {1:D}", resource.ResourceID, CMObjectType.System);
+                    IResultObject collections = connection.QueryProcessor.ExecuteQuery(query);
+
+                    if (collections != null)
                     {
-                        //' Construct new collection object
-                        CMCollection coll = new CMCollection();
+                        foreach (IResultObject collection in collections)
+                        {
+                            //' Construct new collection object
+                            CMCollection coll = new CMCollection();
 
-                        //' Get collection name from collection ID
-                        IResultObject collInstance = GetCMCollection(collection["CollectionID"].StringValue, CMCollectionType.DeviceCollection);
+                            //' Get collection name from collection ID
+                            IResultObject collInstance = GetCMCollection(collection["CollectionID"].StringValue, CMCollectionType.DeviceCollection);
 
-                        //' Add properties to collection object
-                        coll.CollectionID = collection["CollectionID"].StringValue;
-                        coll.Name = collInstance["Name"].StringValue;
-                        returnValue.Add(coll);
+                            //' Add properties to collection object
+                            coll.CollectionID = collection["CollectionID"].StringValue;
+                            coll.Name = collInstance["Name"].StringValue;
+                            returnValue.Add(coll);
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for device collections returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for device collections. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -1766,32 +2374,46 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get resource
-                CMResource resource = GetCMResource(resourceId, CMObjectType.System, CMResourceProperty.ResourceID);
-
-                //' Get all collections for device
-                string query = String.Format("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID = {0} AND ResourceType = {1:D}", resource.ResourceID, CMObjectType.System);
-                IResultObject collections = connection.QueryProcessor.ExecuteQuery(query);
-
-                if (collections != null)
+                try
                 {
-                    foreach (IResultObject collection in collections)
+                    //' Get resource
+                    CMResource resource = GetCMResource(resourceId, CMObjectType.System, CMResourceProperty.ResourceID);
+
+                    //' Get all collections for device
+                    string query = String.Format("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID = {0} AND ResourceType = {1:D}", resource.ResourceID, CMObjectType.System);
+                    IResultObject collections = connection.QueryProcessor.ExecuteQuery(query);
+
+                    if (collections != null)
                     {
-                        //' Construct new collection object
-                        CMCollection coll = new CMCollection();
+                        foreach (IResultObject collection in collections)
+                        {
+                            //' Construct new collection object
+                            CMCollection coll = new CMCollection();
 
-                        //' Get collection name from collection ID
-                        IResultObject collInstance = GetCMCollection(collection["CollectionID"].StringValue, CMCollectionType.DeviceCollection);
+                            //' Get collection name from collection ID
+                            IResultObject collInstance = GetCMCollection(collection["CollectionID"].StringValue, CMCollectionType.DeviceCollection);
 
-                        //' Add properties to collection object
-                        coll.CollectionID = collection["CollectionID"].StringValue;
-                        coll.Name = collInstance["Name"].StringValue;
-                        returnValue.Add(coll);
+                            //' Add properties to collection object
+                            coll.CollectionID = collection["CollectionID"].StringValue;
+                            coll.Name = collInstance["Name"].StringValue;
+                            returnValue.Add(coll);
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for device collections returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for device collections. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -1811,25 +2433,39 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get applications matching category name
-                string appQuery = String.Format("SELECT * FROM SMS_ApplicationLatest WHERE (IsHidden = 0) AND (LocalizedCategoryInstanceNames = '{0}')", categoryName);
-                IResultObject appInstances = connection.QueryProcessor.ExecuteQuery(appQuery);
-
-                if (appInstances != null)
+                try
                 {
-                    foreach (IResultObject app in appInstances)
-                    {
-                        //' Construct a new CMApplication object
-                        CMApplication application = new CMApplication();
+                    //' Get applications matching category name
+                    string appQuery = String.Format("SELECT * FROM SMS_ApplicationLatest WHERE (IsHidden = 0) AND (LocalizedCategoryInstanceNames = '{0}') AND (IsExpired = 0)", categoryName);
+                    IResultObject appInstances = connection.QueryProcessor.ExecuteQuery(appQuery);
 
-                        //' Assign properties to CMApplication object from query result and add object to list
-                        application.ApplicationName = app["LocalizedDisplayName"].StringValue;
-                        appList.Add(application);
+                    if (appInstances != null)
+                    {
+                        foreach (IResultObject app in appInstances)
+                        {
+                            //' Construct a new CMApplication object
+                            CMApplication application = new CMApplication
+                            {
+                                ApplicationName = app["LocalizedDisplayName"].StringValue
+                            };
+                            appList.Add(application);
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for application category returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for application category. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -1849,40 +2485,54 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Determine query for application objects
-                string appQuery = null;
-                if (!String.IsNullOrEmpty(filter))
+                try
                 {
-                    appQuery = String.Format("SELECT * FROM SMS_ApplicationLatest WHERE (IsHidden = 0) AND (LocalizedDisplayName = '{0}')", filter);
-                }
-                else
-                {
-                    appQuery = "SELECT * FROM SMS_ApplicationLatest WHERE (IsHidden = 0)";
-                }
-
-                //' Get applications objects
-                IResultObject appInstances = connection.QueryProcessor.ExecuteQuery(appQuery);
-
-                if (appInstances != null)
-                {
-                    foreach (IResultObject app in appInstances)
+                    //' Determine query for application objects
+                    string appQuery = null;
+                    if (!String.IsNullOrEmpty(filter))
                     {
-                        //' Construct a new CMApplication object
-                        CMApplication application = new CMApplication();
-
-                        //' Assign properties to CMApplication object from query result and add object to list
-                        application.ApplicationName = app["LocalizedDisplayName"].StringValue;
-                        application.ApplicationDescription = app["LocalizedDescription"].StringValue;
-                        application.ApplicationManufacturer = app["Manufacturer"].StringValue;
-                        application.ApplicationVersion = app["SoftwareVersion"].StringValue;
-                        application.ApplicationCreated = app["DateCreated"].DateTimeValue;
-                        application.ApplicationExecutionContext = app["ExecutionContext"].StringValue;
-                        appList.Add(application);
+                        appQuery = String.Format("SELECT * FROM SMS_ApplicationLatest WHERE (IsHidden = 0) AND (LocalizedDisplayName = '{0}')", filter);
                     }
+                    else
+                    {
+                        appQuery = "SELECT * FROM SMS_ApplicationLatest WHERE (IsHidden = 0)";
+                    }
+
+                    //' Get applications objects
+                    IResultObject appInstances = connection.QueryProcessor.ExecuteQuery(appQuery);
+
+                    if (appInstances != null)
+                    {
+                        foreach (IResultObject app in appInstances)
+                        {
+                            //' Construct a new CMApplication object
+                            CMApplication application = new CMApplication
+                            {
+                                ApplicationName = app["LocalizedDisplayName"].StringValue,
+                                ApplicationDescription = app["LocalizedDescription"].StringValue,
+                                ApplicationManufacturer = app["Manufacturer"].StringValue,
+                                ApplicationVersion = app["SoftwareVersion"].StringValue,
+                                ApplicationCreated = app["DateCreated"].DateTimeValue,
+                                ApplicationExecutionContext = app["ExecutionContext"].StringValue
+                            };
+                            appList.Add(application);
+                        }
+                    }
+                    else
+                    {
+                        WriteEventLog("Query for applications returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for applications. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -1902,30 +2552,44 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get primary user relations for device resource id
-                string relQuery = String.Format("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceID = '{0}'", resourceId);
-                IResultObject relResult = connection.QueryProcessor.ExecuteQuery(relQuery);
-
-                if (relResult != null)
+                try
                 {
-                    foreach (IResultObject relation in relResult)
+                    //' Get primary user relations for device resource id
+                    string relQuery = String.Format("SELECT * FROM SMS_UserMachineRelationship WHERE ResourceID = '{0}'", resourceId);
+                    IResultObject relResult = connection.QueryProcessor.ExecuteQuery(relQuery);
+
+                    if (relResult != null)
                     {
-                        try
+                        foreach (IResultObject relation in relResult)
                         {
-                            //' Delete relation instance
-                            relation.Delete();
-                            returnValue++;
-                            WriteEventLog(String.Format("Successfully removed primary user relation for ResourceID '{0}': {1}", resourceId, relation["UniqueUserName"].StringValue), EventLogEntryType.Information);
-                        }
-                        catch (Exception ex)
-                        {
-                            WriteEventLog(String.Format("Unable to remove primary user relation for ResourceID '{1}' with user name '{2}'. Error message: {0}", ex.Message, resourceId, relation["UniqueUserName"].StringValue), EventLogEntryType.Warning);
+                            try
+                            {
+                                //' Delete relation instance
+                                relation.Delete();
+                                returnValue++;
+                                WriteEventLog(String.Format("Successfully removed primary user relation for ResourceID '{0}': {1}", resourceId, relation["UniqueUserName"].StringValue), EventLogEntryType.Information);
+                            }
+                            catch (Exception ex)
+                            {
+                                WriteEventLog(String.Format("Unable to remove primary user relation for ResourceID '{1}' with user name '{2}'. Error message: {0}", ex.Message, resourceId, relation["UniqueUserName"].StringValue), EventLogEntryType.Warning);
+                            }
                         }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for user machine relations returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while attempting to remove primary user for device. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -1962,6 +2626,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
@@ -2020,23 +2687,37 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Connect to SMS Provider
                 SmsProvider smsProvider = new SmsProvider();
                 WqlConnectionManager connection = smsProvider.Connect(siteServer);
 
-                //' Get task sequence object
-                string tsQuery = String.Format("SELECT * FROM SMS_TaskSequencePackage WHERE PackageID = '{0}'", packageID);
-                IResultObject tsResult = connection.QueryProcessor.ExecuteQuery(tsQuery);
-
-                if (tsResult != null)
+                try
                 {
-                    foreach (IResultObject ts in tsResult)
+                    //' Get task sequence object
+                    string tsQuery = String.Format("SELECT * FROM SMS_TaskSequencePackage WHERE PackageID = '{0}'", packageID);
+                    IResultObject tsResult = connection.QueryProcessor.ExecuteQuery(tsQuery);
+
+                    if (tsResult != null)
                     {
-                        taskSequence.PackageID = ts["PackageID"].StringValue;
-                        taskSequence.Description = ts["Description"].StringValue;
-                        taskSequence.PackageName = ts["Name"].StringValue;
-                        taskSequence.BootImageID = ts["BootImageID"].StringValue;
+                        foreach (IResultObject ts in tsResult)
+                        {
+                            taskSequence.PackageID = ts["PackageID"].StringValue;
+                            taskSequence.Description = ts["Description"].StringValue;
+                            taskSequence.PackageName = ts["Name"].StringValue;
+                            taskSequence.BootImageID = ts["BootImageID"].StringValue;
+                        }
                     }
+                    else
+                    {
+                        WriteEventLog("Query for task sequence returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for task sequence. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -2056,6 +2737,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Determine if ldap prefix needs to be appended
                 if (organizationalUnitLocation.StartsWith("LDAP://") == false)
                 {
@@ -2099,6 +2783,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Get AD computer and user object distinguished names
                 string computerDistinguishedName = GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName);
                 string userDistinguishedName = (GetADObject(userName, ADObjectClass.User, ADObjectType.distinguishedName)).Remove(0, 7);
@@ -2141,6 +2828,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Get AD object distinguished name for computer and group
                 string computerDistinguishedName = (GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName)).Remove(0, 7);
                 string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
@@ -2170,6 +2860,50 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Add a user in Active Directory to a specific group")]
+        public bool AddADUserToGroup(string secret, string groupName, string userName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Get AD object distinguished name for computer and group
+                string userDistinguishedName = (GetADObject(userName, ADObjectClass.User, ADObjectType.distinguishedName)).Remove(0, 7);
+                string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
+
+                if (!String.IsNullOrEmpty(userDistinguishedName) && !String.IsNullOrEmpty(groupDistinguishedName))
+                {
+                    try
+                    {
+                        //' Add user to group and commit
+                        DirectoryEntry groupEntry = new DirectoryEntry(groupDistinguishedName);
+                        groupEntry.Properties["member"].Add(userDistinguishedName);
+                        groupEntry.CommitChanges();
+
+                        //' Dispose object
+                        groupEntry.Dispose();
+
+                        returnValue = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to add an user object in Active Directory to a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
         [WebMethod(Description = "Remove a computer in Active Directory from a specific group")]
         public bool RemoveADComputerFromGroup(string secret, string groupName, string computerName)
         {
@@ -2182,6 +2916,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Get AD object distinguished name for computer and group
                 string computerDistinguishedName = (GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName)).Remove(0,7);
                 string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
@@ -2229,6 +2966,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Get AD group object
                 string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
 
@@ -2262,17 +3002,27 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                //' Get AD user object
-                string userDistinguishedName = GetADObject(userName, ADObjectClass.User, ADObjectType.distinguishedName);
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                //' Get AD groups for user distinguished name
-                ArrayList groupMemberships = new ArrayList();
-                ArrayList groups = GetADAttributeValues("memberOf", userDistinguishedName, groupMemberships, true);
-
-                foreach (string group in groups)
+                try
                 {
-                    string attributeValue = GetADAttributeValue(group, "samAccountName");
-                    returnValue.Add(new ADGroup() { DistinguishedName = group, samAccountName = attributeValue });
+                    //' Get AD user object
+                    string userDistinguishedName = GetADObject(userName, ADObjectClass.User, ADObjectType.distinguishedName);
+
+                    //' Get AD groups for user distinguished name
+                    ArrayList groupMemberships = new ArrayList();
+                    ArrayList groups = GetADAttributeValues("memberOf", userDistinguishedName, groupMemberships, true);
+
+                    foreach (string group in groups)
+                    {
+                        string attributeValue = GetADAttributeValue(group, "samAccountName");
+                        returnValue.Add(new ADGroup() { DistinguishedName = group, samAccountName = attributeValue });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while retrieving Active Directory group memberships for user. Error message: { ex.Message }", EventLogEntryType.Error);
                 }
             }
 
@@ -2292,6 +3042,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Get AD object distinguished name for computer
                 string computerDistinguishedName = GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName);
                 
@@ -2332,6 +3085,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Get AD object distinguished name for computer
                 string computerDistinguishedName = GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName);
 
@@ -2369,17 +3125,27 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                //' Get all subnets for specified forest
-                Dictionary<string, string> subnets = GetADSubnets(forestName);
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                foreach (KeyValuePair<string, string> subnet in subnets)
+                try
                 {
-                    var ipData = IPAddresses.GetSubnetAndMaskFromCidr(subnet.Key);
-                    bool result = IPAddresses.IsAddressOnSubnet(IPAddress.Parse(ipAddress), ipData.Item1, ipData.Item2);
-                    if (result == true)
+                    //' Get all subnets for specified forest
+                    Dictionary<string, string> subnets = GetADSubnets(forestName);
+
+                    foreach (KeyValuePair<string, string> subnet in subnets)
                     {
-                        siteName = subnet.Value;
+                        var ipData = IPAddresses.GetSubnetAndMaskFromCidr(subnet.Key);
+                        bool result = IPAddresses.IsAddressOnSubnet(IPAddress.Parse(ipAddress), ipData.Item1, ipData.Item2);
+                        if (result == true)
+                        {
+                            siteName = subnet.Value;
+                        }
                     }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while retrieving Active Directory site name. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -2402,22 +3168,29 @@ namespace ConfigMgrWebService
                 //' Log that secret key was accepted
                 WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                //' Check if user is member of group
-                using (PrincipalContext context = new PrincipalContext(ContextType.Domain, domain))
-                using (UserPrincipal user = UserPrincipal.FindByIdentity(context, userName))
-                using (GroupPrincipal group = GroupPrincipal.FindByIdentity(context, groupName))
+                try
                 {
-                    if (user != null)
+                    //' Check if user is member of group
+                    using (PrincipalContext context = new PrincipalContext(ContextType.Domain, domain))
+                    using (UserPrincipal user = UserPrincipal.FindByIdentity(context, userName))
+                    using (GroupPrincipal group = GroupPrincipal.FindByIdentity(context, groupName))
                     {
-                        WriteEventLog("Successfully located user object", EventLogEntryType.Information);
-                        if (group != null)
+                        if (user != null)
                         {
-                            WriteEventLog("Successfully located group object", EventLogEntryType.Information);
+                            WriteEventLog("Successfully located user object", EventLogEntryType.Information);
+                            if (group != null)
+                            {
+                                WriteEventLog("Successfully located group object", EventLogEntryType.Information);
 
-                            //' Check if user is member of group from param value, also check nested groups
-                            memberState = GetADGroupNestedMemberOf(user, group);
+                                //' Check if user is member of group from param value, also check nested groups
+                                memberState = GetADGroupNestedMemberOf(user, group);
+                            }
                         }
                     }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while verifying user group membership. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -2440,22 +3213,29 @@ namespace ConfigMgrWebService
                 //' Log that secret key was accepted
                 WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                //' Check if computer is member of group
-                using (PrincipalContext context = new PrincipalContext(ContextType.Domain, domain))
-                using (ComputerPrincipal computer = ComputerPrincipal.FindByIdentity(context, computerName))
-                using (GroupPrincipal group = GroupPrincipal.FindByIdentity(context, groupName))
+                try
                 {
-                    if (computer != null)
+                    //' Check if computer is member of group
+                    using (PrincipalContext context = new PrincipalContext(ContextType.Domain, domain))
+                    using (ComputerPrincipal computer = ComputerPrincipal.FindByIdentity(context, computerName))
+                    using (GroupPrincipal group = GroupPrincipal.FindByIdentity(context, groupName))
                     {
-                        WriteEventLog("Successfully located computer object", EventLogEntryType.Information);
-                        if (group != null)
+                        if (computer != null)
                         {
-                            WriteEventLog("Successfully located group object", EventLogEntryType.Information);
+                            WriteEventLog("Successfully located computer object", EventLogEntryType.Information);
+                            if (group != null)
+                            {
+                                WriteEventLog("Successfully located group object", EventLogEntryType.Information);
 
-                            //' Check if computer is member of group from param value, also check nested groups
-                            memberState = GetADGroupNestedMemberOf(computer, group);
+                                //' Check if computer is member of group from param value, also check nested groups
+                                memberState = GetADGroupNestedMemberOf(computer, group);
+                            }
                         }
                     }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while verifying computer group membership. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -2475,6 +3255,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Set empty value for search result
                 SearchResult searchResult = null;
                 DirectoryEntry directoryObject = null;
@@ -2485,8 +3268,10 @@ namespace ConfigMgrWebService
 
                 //' Construct directory entry for directory searcher
                 DirectoryEntry domain = new DirectoryEntry(currentDomain);
-                DirectorySearcher directorySearcher = new DirectorySearcher(domain);
-                directorySearcher.Filter = String.Format("(&(objectClass=computer)((sAMAccountName={0}$)))", computerName);
+                DirectorySearcher directorySearcher = new DirectorySearcher(domain)
+                {
+                    Filter = String.Format("(&(objectClass=computer)((sAMAccountName={0}$)))", computerName)
+                };
                 directorySearcher.PropertiesToLoad.Add("distinguishedName");
                 directorySearcher.PropertiesToLoad.Add("sAMAccountName");
                 directorySearcher.PropertiesToLoad.Add("cn");
@@ -2539,12 +3324,16 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Construct list for all domain controllers
                 List<string> domainControllers = new List<string>();
 
                 //' Configure domain context
                 Domain currentDomain = Domain.GetCurrentDomain();
                 PrincipalContext principalContext = new PrincipalContext(ContextType.Domain, currentDomain.Name, null, ContextOptions.Negotiate);
+                WriteEventLog(String.Format("Using current domain for domain controller lookup: {0}", currentDomain.Name), EventLogEntryType.Information);
 
                 //' Get a list of all domain controllers in the current domain
                 try
@@ -2554,6 +3343,10 @@ namespace ConfigMgrWebService
                         //' Add domain controller distinguished name to list
                         DirectoryEntry domainControllerEntry = domainController.GetDirectoryEntry();
                         string domainControllerName = (string)domainControllerEntry.Properties["name"].Value;
+
+                        //' Debug
+                        WriteEventLog(String.Format("Detected domain controller name: {0}", domainControllerName), EventLogEntryType.Information);
+
                         ComputerPrincipal dcPrincipal = ComputerPrincipal.FindByIdentity(principalContext, IdentityType.Name, domainControllerName);
                         domainControllers.Add(dcPrincipal.DistinguishedName);
 
@@ -2564,7 +3357,7 @@ namespace ConfigMgrWebService
                 }
                 catch (Exception ex)
                 {
-                    WriteEventLog("Unable to detect domain controllers in current domain.", EventLogEntryType.Error);
+                    WriteEventLog(String.Format("Unable to detect domain controllers in current domain. Error message: {0}", ex.Message), EventLogEntryType.Error);
                     returnValue = false;
                 }
 
@@ -2632,8 +3425,18 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                domain.DefaultNamingContext = GetADDefaultNamingContext();
-                domain.DomainName = GetADDomainName();
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                try
+                {
+                    domain.DefaultNamingContext = GetADDefaultNamingContext();
+                    domain.DomainName = GetADDomainName();
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for Active Directory domain details. Error message: { ex.Message } ", EventLogEntryType.Error);
+                }
             }
 
             MethodEnd(method);
@@ -2652,6 +3455,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 try
                 {
                     //' Determine if ldap prefix needs to be appended
@@ -2722,6 +3528,9 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Log user attempted to invoke deployment
                 WriteEventLog(String.Format("{0}", value), EventLogEntryType.Information);
             }
@@ -2742,14 +3551,19 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Get connection string
-                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
                 try
                 {
                     //' Connect to SQL server instance
-                    SqlConnection connection = new SqlConnection();
-                    connection.ConnectionString = connectionString.ConnectionString;
+                    SqlConnection connection = new SqlConnection
+                    {
+                        ConnectionString = connectionString.ConnectionString
+                    };
                     connection.Open();
 
                     //' Invoke SQL command
@@ -2790,8 +3604,11 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Get connection string
-                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
                 //' Get computer identity
                 string identity = GetMDTComputerIdentity(connectionString, "AssetTag", assetTag);
@@ -2817,8 +3634,11 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Get connection string
-                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
                 //' Get computer identity
                 string identity = GetMDTComputerIdentity(connectionString, "MacAddress", macAddress);
@@ -2844,8 +3664,11 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Get connection string
-                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
                 //' Get computer identity
                 string identity = GetMDTComputerIdentity(connectionString, "SerialNumber", serialNumber);
@@ -2871,8 +3694,11 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 //' Get connection string
-                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
                 //' Get computer identity
                 string identity = GetMDTComputerIdentity(connectionString, "UUID", uuid);
@@ -2898,10 +3724,13 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 try
                 {
                     //' Get connection string
-                    SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                    SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
                     //' Connect to SQL server instance
                     SqlConnection connection = new SqlConnection();
@@ -2962,10 +3791,13 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
                 try
                 {
                     //' Get connection string
-                    SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                    SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
                     //' Connect to SQL server instance
                     SqlConnection connection = new SqlConnection();
@@ -3023,10 +3855,20 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                string computerIdentity = GetMDTComputerName(identity);
-                if (!String.IsNullOrEmpty(computerIdentity))
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                try
                 {
-                    returnValue = computerIdentity;
+                    string computerIdentity = GetMDTComputerName(identity);
+                    if (!String.IsNullOrEmpty(computerIdentity))
+                    {
+                        returnValue = computerIdentity;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying MDT computer identity. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -3046,19 +3888,31 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                Dictionary<string, string> dictionary = new Dictionary<string, string>();
-                dictionary.Add("AssetTag", assetTag);
-                dictionary.Add("Description", description);
-
-                if (createComputer == true)
+                try
                 {
-                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
+                    string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
+
+                    Dictionary<string, string> dictionary = new Dictionary<string, string>
+                    {
+                        { "AssetTag", assetTag },
+                        { "Description", description }
+                    };
+
+                    if (createComputer == true)
+                    {
+                        returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
+                    }
+                    else
+                    {
+                        returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
+                    WriteEventLog($"An error occurred while adding MDT role member. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -3078,21 +3932,30 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                Dictionary<string, string> dictionary = new Dictionary<string, string>();
-                dictionary.Add("SerialNumber", serialNumber);
-                dictionary.Add("Description", description);
-
-                if (createComputer == true)
+                try
                 {
-                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
-                }
-                else
-                {
-                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
-                }
+                    string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
 
+                    Dictionary<string, string> dictionary = new Dictionary<string, string>();
+                    dictionary.Add("SerialNumber", serialNumber);
+                    dictionary.Add("Description", description);
+
+                    if (createComputer == true)
+                    {
+                        returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
+                    }
+                    else
+                    {
+                        returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while adding MDT role member. Error message: { ex.Message } ", EventLogEntryType.Error);
+                }
             }
 
             MethodEnd(method);
@@ -3111,19 +3974,29 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                Dictionary<string, string> dictionary = new Dictionary<string, string>();
-                dictionary.Add("MacAddress", macAddress);
-                dictionary.Add("Description", description);
-
-                if (createComputer == true)
+                try
                 {
-                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
+                    string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
+
+                    Dictionary<string, string> dictionary = new Dictionary<string, string>();
+                    dictionary.Add("MacAddress", macAddress);
+                    dictionary.Add("Description", description);
+
+                    if (createComputer == true)
+                    {
+                        returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
+                    }
+                    else
+                    {
+                        returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
+                    WriteEventLog($"An error occurred while adding MDT role member. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -3143,19 +4016,29 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                Dictionary<string, string> dictionary = new Dictionary<string, string>();
-                dictionary.Add("UUID", uuid);
-                dictionary.Add("Description", description);
-
-                if (createComputer == true)
+                try
                 {
-                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
+                    string description = computerName + " - ConfigMgr OSD FrontEnd " + DateTime.Now.ToString("yyyy-MM-dd");
+
+                    Dictionary<string, string> dictionary = new Dictionary<string, string>();
+                    dictionary.Add("UUID", uuid);
+                    dictionary.Add("Description", description);
+
+                    if (createComputer == true)
+                    {
+                        returnValue = BeginMDTRoleMember(dictionary, computerName, roleName);
+                    }
+                    else
+                    {
+                        returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    returnValue = BeginMDTRoleMember(dictionary, computerName, roleName, false, identity);
+                    WriteEventLog($"An error occurred while adding MDT role member. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -3175,14 +4058,24 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                Dictionary<string, string> dictionary = new Dictionary<string, string>();
-                dictionary.Add("AssetTag", assetTag);
-                dictionary.Add("SerialNumber", serialNumber);
-                dictionary.Add("MacAddress", macAddress);
-                dictionary.Add("UUID", uuid);
-                dictionary.Add("Description", description);
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                returnValue = BeginMDTRoleMember(dictionary, computerName, role);
+                try
+                {
+                    Dictionary<string, string> dictionary = new Dictionary<string, string>();
+                    dictionary.Add("AssetTag", assetTag);
+                    dictionary.Add("SerialNumber", serialNumber);
+                    dictionary.Add("MacAddress", macAddress);
+                    dictionary.Add("UUID", uuid);
+                    dictionary.Add("Description", description);
+
+                    returnValue = BeginMDTRoleMember(dictionary, computerName, role);
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while adding MDT role member. Error message: { ex.Message } ", EventLogEntryType.Error);
+                }
             }
 
             MethodEnd(method);
@@ -3201,7 +4094,17 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                returnValue = RemoveMDTComputerRoles(identity);
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                try
+                {
+                    returnValue = RemoveMDTComputerRoles(identity);
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while removing MDT computer identity from roles. Error message: { ex.Message } ", EventLogEntryType.Error);
+                }
             }
 
             MethodEnd(method);
@@ -3220,13 +4123,23 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                //' Get computer identity from in param value
-                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
-                string identity = GetMDTComputerIdentity(connectionString, "MacAddress", macAddress);
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                if (!String.IsNullOrEmpty(identity))
+                try
                 {
-                    returnValue = RemoveMDTComputer(connectionString, identity);
+                    //' Get computer identity from in param value
+                    SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
+                    string identity = GetMDTComputerIdentity(connectionString, "MacAddress", macAddress);
+
+                    if (!String.IsNullOrEmpty(identity))
+                    {
+                        returnValue = RemoveMDTComputer(connectionString, identity);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while removing MDT computer identity. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -3246,13 +4159,23 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                //' Get computer identity from in param value
-                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
-                string identity = GetMDTComputerIdentity(connectionString, "SerialNumber", serialNumber);
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                if (!String.IsNullOrEmpty(identity))
+                try
                 {
-                    returnValue = RemoveMDTComputer(connectionString, identity);
+                    //' Get computer identity from in param value
+                    SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
+                    string identity = GetMDTComputerIdentity(connectionString, "SerialNumber", serialNumber);
+
+                    if (!String.IsNullOrEmpty(identity))
+                    {
+                        returnValue = RemoveMDTComputer(connectionString, identity);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while removing MDT computer identity. Error message: { ex.Message } ", EventLogEntryType.Error);
                 }
             }
 
@@ -3272,14 +4195,594 @@ namespace ConfigMgrWebService
             //' Validate secret key
             if (secret == secretKey)
             {
-                //' Get computer identity from in param value
-                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                computerList = GetMDTComputerByName(connectionString, computerName);
+                try
+                {
+                    //' Get computer identity from in param value
+                    SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
+                    computerList = GetMDTComputerByName(connectionString, computerName);
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while retrieving MDT computer identity. Error message: { ex.Message } ", EventLogEntryType.Error);
+                }
             }
 
             MethodEnd(method);
             return computerList;
+        }
+
+        [WebMethod(Description = "Get an OSD monitoring object for a specific computer by computer name")]
+        public List<CMOSDMonitor> GetCMOSDMonitorDataByComputer(string secret, string computerName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            List<CMOSDMonitor> monitorList = new List<CMOSDMonitor>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                try
+                {
+                    //' Construct the connection string for SQL
+                    SqlConnectionStringBuilder connectionString = GetSqlConnectionString(monitorDatabase);
+
+                    //' Retrieve monitoring objects by computer name
+                    monitorList = GetCMOSDMonitorOjectByComputer(connectionString, computerName);
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for ConfigMgr OSD Monitor data. Error message: { ex.Message } ", EventLogEntryType.Error);
+                }
+            }
+
+            MethodEnd(method);
+            return monitorList;
+        }
+
+        [WebMethod(Description = "Get an OSD monitoring object for a specific computer by unique id")]
+        public CMOSDMonitor GetCMOSDMonitorDataByUniqueID(string secret, string uniqueId)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            CMOSDMonitor monitorObject = new CMOSDMonitor();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                try
+                {
+                    //' Construct the connection string for SQL
+                    SqlConnectionStringBuilder connectionString = GetSqlConnectionString(monitorDatabase);
+
+                    //' Retrieve monitoring objects by unique id
+                    monitorObject = GetCMOSDMonitorObject(connectionString, uniqueId);
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for ConfigMgr OSD Monitor data. Error message: { ex.Message } ", EventLogEntryType.Error);
+                }
+            }
+
+            MethodEnd(method);
+            return monitorObject;
+        }
+
+        [WebMethod(Description = "Add a new monitoring object or update an existing one for a specific computer")]
+        public CMOSDMonitor AddCMOSDMonitorData(string secret, string uniqueId, string computerName, string uuid, string macAddress, int severity, string modifiedTime, string deploymentId = null, string stepName = null, string currentStep = null, string totalSteps = null, string startTime = null, string endTime = null, string details = null, string dartIp = null, string dartPort = null, string dartTicket = null)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            CMOSDMonitor returnValue = null;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                try
+                {
+                    //' Instatiate converted input parameter objects
+                    int currentStepInt = 0;
+                    int totalStepsInt = 0;
+
+                    //' Handle integer parameter input conversion
+                    if (currentStep != null && !String.IsNullOrEmpty(currentStep))
+                    {
+                        currentStepInt = Convert.ToInt32(currentStep);
+                    }
+                    if (totalSteps != null && !String.IsNullOrEmpty(totalSteps))
+                    {
+                        totalStepsInt = Convert.ToInt32(totalSteps);
+                    }
+
+                    //' Handle string datetime parameter input conversion
+                    object cModifiedTime = null;
+                    object cStartTime = null;
+                    object cEndTime = null;
+                    if (modifiedTime != null)
+                    {
+                        if (!String.IsNullOrEmpty(modifiedTime))
+                        {
+                            cModifiedTime = DateTime.ParseExact(modifiedTime, "yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+                        }
+                    }
+                    if (startTime != null)
+                    {
+                        if (!String.IsNullOrEmpty(startTime))
+                        {
+                            cStartTime = DateTime.ParseExact(startTime, "yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+                        }
+                    }
+                    if (endTime != null)
+                    {
+                        if (!String.IsNullOrEmpty(endTime))
+                        {
+                            cEndTime = DateTime.ParseExact(endTime, "yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+                        }
+                    }
+
+                    //' Construct dictionary of parameter input
+                    Dictionary<string, object> inputParams = new Dictionary<string, object>
+                    {
+                        { "UniqueID", uniqueId },
+                        { "ComputerName", computerName },
+                        { "SMBIOSGUID", uuid },
+                        { "MacAddress", macAddress },
+                        { "Severity", severity },
+                        { "ModifiedTime", cModifiedTime },
+                        { "DeploymentID", deploymentId },
+                        { "StepName", stepName },
+                        { "CurrentStep", currentStepInt },
+                        { "TotalSteps", totalStepsInt },
+                        { "StartTime", cStartTime },
+                        { "EndTime", cEndTime },
+                        { "Details", details },
+                        { "DartIP", dartIp },
+                        { "DartPort", dartPort },
+                        { "DartTicket", dartTicket }
+                    };
+
+                    //' Construct the connection string for SQL
+                    SqlConnectionStringBuilder connectionString = GetSqlConnectionString(monitorDatabase);
+
+                    //' Check for exisitng database row matching unique id, else add a row entry
+                    CMOSDMonitor monitorObject = GetCMOSDMonitorObject(connectionString, uniqueId);
+                    if (monitorObject != null)
+                    {
+                        //' Update object
+                        bool updateResult = UpdateCMOSDMonitorObject(connectionString, inputParams, uniqueId);
+                        if (updateResult == true)
+                        {
+                            returnValue = GetCMOSDMonitorObject(connectionString, uniqueId);
+                        }
+                        else
+                        {
+                            returnValue = monitorObject;
+                        }
+                    }
+                    else
+                    {
+                        bool insertResult = AddCMOSDMonitorObject(connectionString, inputParams, uniqueId);
+                        if (insertResult == true)
+                        {
+                            returnValue = GetCMOSDMonitorObject(connectionString, uniqueId);
+                        }
+                        else
+                        {
+                            returnValue = null;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while adding ConfigMgr OSD Monitor entry to database. Error message: { ex.Message } ", EventLogEntryType.Error);
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        private bool AddCMOSDMonitorObject(SqlConnectionStringBuilder connectionString, Dictionary<string, object> inputProps, string uniqueId)
+        {
+            //' Construct variable for return value
+            bool result = false;
+
+            //' Connect to SQL server instance
+            SqlConnection connection = new SqlConnection
+            {
+                ConnectionString = connectionString.ConnectionString
+            };
+            connection.Open();
+
+            //' Build start of SQL command for INSERT command
+            SqlCommand cmdMonitor = connection.CreateCommand();
+            StringBuilder sqlString = new StringBuilder();
+            sqlString.Append("INSERT INTO MonitoringData (");
+
+            //' Determine count for non-null values
+            Dictionary<string, object> inputParams = new Dictionary<string, object>();
+            foreach (KeyValuePair<string, object> prop in inputProps)
+            {
+                if (prop.Value != null)
+                {
+                    if (prop.Value.GetType() == typeof(string))
+                    {
+                        string modProp = prop.Value.ToString();
+                        if (!String.IsNullOrEmpty(modProp))
+                        {
+                            inputParams.Add(prop.Key, prop.Value);
+                        }
+                    }
+                    else if (prop.Value.GetType() == typeof(int))
+                    {
+                        if ((int)prop.Value >= 1)
+                        {
+                            inputParams.Add(prop.Key, prop.Value);
+                        }
+                    }
+                    else if (prop.Value.GetType() == typeof(DateTime))
+                    {
+                        inputParams.Add(prop.Key, prop.Value);
+                    }
+                }
+            }
+
+            //' Append command with columns
+            int currCount = 1;
+            int paramCount = inputParams.Count;
+            foreach (KeyValuePair<string, object> prop in inputParams)
+            {
+                if (prop.Value != null)
+                {
+                    if (currCount < paramCount)
+                    {
+                        sqlString.Append(String.Format("{0}, ", prop.Key));
+                    }
+                    else
+                    {
+                        sqlString.Append(String.Format("{0}", prop.Key));
+                    }
+                    currCount++;
+                }
+            }
+
+            //' Append command
+            sqlString.Append(") VALUES (");
+
+            //' Append command with parameters for columns
+            currCount = 1;
+            foreach (KeyValuePair<string, object> prop in inputParams)
+            {
+                if (prop.Value != null)
+                {
+                    if (currCount < paramCount)
+                    {
+                        sqlString.Append(String.Format("@{0}, ", prop.Key));
+                    }
+                    else
+                    {
+                        sqlString.Append(String.Format("@{0}", prop.Key));
+                    }
+                    currCount++;
+                }
+            }
+
+            //' Append end for command
+            sqlString.Append(") SELECT @UniqueID");
+
+            //' Add SQL command parameters
+            foreach (KeyValuePair<string, object> prop in inputParams)
+            {
+                if (prop.Value != null)
+                {
+                    cmdMonitor.Parameters.Add(String.Format("@{0}", prop.Key), SqlDbType.NVarChar).Value = prop.Value;
+                }
+                else
+                {
+                    cmdMonitor.Parameters.Add(String.Format("@{0}", prop.Key), SqlDbType.NVarChar).Value = string.Empty;
+                }
+            }
+
+            //' Add SQL command text string
+            cmdMonitor.CommandText = sqlString.ToString();
+
+            //' Invoke SQL command to insert monitoring object
+            try
+            {
+                object resultMonitor = cmdMonitor.ExecuteScalar();
+                if (resultMonitor != null)
+                {
+                    result = true;
+                }
+
+                //' Cleanup and disconnect SQL connection
+                cmdMonitor.Dispose();
+                connection.Close();
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                WriteEventLog(String.Format("An error occured when attempting to insert OSD monitoring data. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                return result;
+            }
+        }
+
+        private bool UpdateCMOSDMonitorObject(SqlConnectionStringBuilder connectionString, Dictionary<string, object> inputProps, string uniqueId)
+        {
+            //' Construct variable for return value
+            bool result = false;
+
+            //' Connect to SQL server instance
+            SqlConnection connection = new SqlConnection();
+            connection.ConnectionString = connectionString.ConnectionString;
+            connection.Open();
+
+            //' Build start of SQL command for INSERT command
+            SqlCommand cmdMonitor = connection.CreateCommand();
+            StringBuilder sqlString = new StringBuilder();
+            sqlString.Append("UPDATE MonitoringData SET ");
+
+            //' Remove unique identifier from params
+            inputProps.Remove("UniqueID");
+
+            //' Determine count for non-null values
+            Dictionary<string, object> inputParams = new Dictionary<string, object>();
+            foreach (KeyValuePair<string, object> prop in inputProps)
+            {
+                if (prop.Value != null)
+                {
+                    if (prop.Value.GetType() == typeof(string))
+                    {
+                        string modProp = prop.Value.ToString();
+                        if (!String.IsNullOrEmpty(modProp))
+                        {
+                            inputParams.Add(prop.Key, prop.Value);
+                        }
+                    }
+                    else if (prop.Value.GetType() == typeof(int))
+                    {
+                        if ((int)prop.Value >= 1)
+                        {
+                            inputParams.Add(prop.Key, prop.Value);
+                        }
+                    }
+                    else if (prop.Value.GetType() == typeof(DateTime))
+                    {
+                        inputParams.Add(prop.Key, prop.Value);
+                    }
+                }
+            }
+
+            //' Append command with columns
+            int currCount = 1;
+            int paramCount = inputParams.Count;
+            foreach (KeyValuePair<string, object> prop in inputParams)
+            {
+                if (prop.Value != null)
+                {
+                    if (currCount < paramCount)
+                    {
+                        sqlString.Append(String.Format("{0} = '{1}', ", prop.Key, prop.Value));
+                    }
+                    else
+                    {
+                        sqlString.Append(String.Format("{0} = '{1}'", prop.Key, prop.Value));
+                    }
+                    currCount++;
+                }
+            }
+
+            //' Append command
+            sqlString.Append(String.Format(" WHERE UniqueID = '{0}' SELECT @UniqueID", uniqueId));
+
+            //' Add SQL command parameters
+            cmdMonitor.Parameters.Add(String.Format("@{0}", "UniqueID"), SqlDbType.NVarChar).Value = uniqueId;
+
+            //' Add SQL command text string
+            cmdMonitor.CommandText = sqlString.ToString();
+
+            //' Invoke SQL command to update monitoring object
+            try
+            {
+                object resultMonitor = cmdMonitor.ExecuteScalar();
+                if (resultMonitor != null)
+                {
+                    result = true;
+                }
+
+                //' Cleanup and disconnect SQL connection
+                cmdMonitor.Dispose();
+                connection.Close();
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                WriteEventLog(String.Format("An error occured when attempting to update OSD monitoring data. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                return result;
+            }
+        }
+
+        private List<CMOSDMonitor> GetCMOSDMonitorOjectByComputer(SqlConnectionStringBuilder connectionString, string computerName)
+        {
+            //' Construct variable for return value
+            List<CMOSDMonitor> monitorList = new List<CMOSDMonitor>();
+
+            //' Connect to SQL server instance
+            SqlConnection connection = new SqlConnection();
+            connection.ConnectionString = connectionString.ConnectionString;
+            connection.Open();
+
+            //' Construct SQL statement
+            SqlCommand command = connection.CreateCommand();
+            StringBuilder sqlString = new StringBuilder();
+            sqlString.Append(String.Format("SELECT * FROM MonitoringData WHERE ComputerName like @ComputerName"));
+
+            //' Add parameters to command
+            command.Parameters.Add("@ComputerName", SqlDbType.NVarChar).Value = computerName;
+            command.CommandText = sqlString.ToString();
+
+            //' Invoke SQL command to retrieve monitoring objects
+            try
+            {
+                using (SqlDataReader reader = command.ExecuteReader())
+                {
+                    if (reader.HasRows == true)
+                    {
+                        while (reader.Read())
+                        {
+                            //' Construct new monitoring object
+                            CMOSDMonitor monitorObject = new CMOSDMonitor();
+
+                            //' Read string object from database
+                            monitorObject.UniqueID = reader["UniqueID"].ToString();
+                            monitorObject.ComputerName = reader["ComputerName"].ToString();
+                            monitorObject.SMBIOSGUID = reader["SMBIOSGUID"].ToString();
+                            monitorObject.MacAddress = reader["MacAddress"].ToString();
+                            monitorObject.DeploymentID = reader["DeploymentID"].ToString();
+                            monitorObject.StepName = reader["StepName"].ToString();
+                            monitorObject.Details = reader["Details"].ToString();
+                            monitorObject.DartIP = reader["DartIP"].ToString();
+                            monitorObject.DartPort = reader["DartPort"].ToString();
+                            monitorObject.DartTicket = reader["DartTicket"].ToString();
+
+                            //' Read DateTime objects from database
+                            int modColIndex = reader.GetOrdinal("ModifiedTime");
+                            if (!reader.IsDBNull(modColIndex))
+                            {
+                                monitorObject.ModifiedTime = reader.GetDateTime(modColIndex);
+                            }
+                            int startColIndex = reader.GetOrdinal("StartTime");
+                            if (!reader.IsDBNull(startColIndex))
+                            {
+                                monitorObject.StartTime = reader.GetDateTime(startColIndex);
+                            }
+                            int endColIndex = reader.GetOrdinal("EndTime");
+                            if (!reader.IsDBNull(endColIndex))
+                            {
+                                monitorObject.EndTime = reader.GetDateTime(endColIndex);
+                            }
+
+                            //' Read integers from database
+                            monitorObject.Severity = reader.GetDBInt("Severity");
+                            monitorObject.CurrentStep = reader.GetDBInt("CurrentStep");
+                            monitorObject.TotalSteps = reader.GetDBInt("TotalSteps");
+
+                            //' Update list of monitoring objects
+                            monitorList.Add(monitorObject);
+                        }
+                    }
+                }
+
+                //' Cleanup and disconnect SQL connection
+                command.Dispose();
+                connection.Close();
+            }
+            catch (Exception ex)
+            {
+                WriteEventLog(String.Format("An error occured when attempting to get OSD monitoring data objects. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                return null;
+            }
+
+            return monitorList;
+
+        }
+
+        private CMOSDMonitor GetCMOSDMonitorObject(SqlConnectionStringBuilder connectionString, string uniqueId)
+        {
+            //' Construct variable for return value
+            CMOSDMonitor monitorObject = null;
+
+            //' Connect to SQL server instance
+            SqlConnection connection = new SqlConnection();
+            connection.ConnectionString = connectionString.ConnectionString;
+            connection.Open();
+
+            //' Construct SQL statement
+            SqlCommand command = connection.CreateCommand();
+            StringBuilder sqlString = new StringBuilder();
+            sqlString.Append(String.Format("SELECT * FROM MonitoringData WHERE UniqueID like @ID"));
+
+            //' Add parameters to command
+            command.Parameters.Add("@ID", SqlDbType.NVarChar).Value = uniqueId;
+            command.CommandText = sqlString.ToString();
+
+            //' Invoke SQL command retrieve monitoring object
+            try
+            {
+                using (SqlDataReader reader = command.ExecuteReader())
+                {
+                    if (reader.HasRows == true)
+                    {
+                        monitorObject = new CMOSDMonitor();
+                        while (reader.Read())
+                        {
+                            //' Read string object from database
+                            monitorObject.UniqueID = reader["UniqueID"].ToString();
+                            monitorObject.ComputerName = reader["ComputerName"].ToString();
+                            monitorObject.SMBIOSGUID = reader["SMBIOSGUID"].ToString();
+                            monitorObject.MacAddress = reader["MacAddress"].ToString();
+                            monitorObject.DeploymentID = reader["DeploymentID"].ToString();
+                            monitorObject.StepName = reader["StepName"].ToString();
+                            monitorObject.Details = reader["Details"].ToString();
+                            monitorObject.DartIP = reader["DartIP"].ToString();
+                            monitorObject.DartPort = reader["DartPort"].ToString();
+                            monitorObject.DartTicket = reader["DartTicket"].ToString();
+
+                            //' Read DateTime objects from database
+                            int modColIndex = reader.GetOrdinal("ModifiedTime");
+                            if (!reader.IsDBNull(modColIndex))
+                            {
+                                monitorObject.ModifiedTime = reader.GetDateTime(modColIndex);
+                            }
+                            int startColIndex = reader.GetOrdinal("StartTime");
+                            if (!reader.IsDBNull(startColIndex))
+                            {
+                                monitorObject.StartTime = reader.GetDateTime(startColIndex);
+                            }
+                            int endColIndex = reader.GetOrdinal("EndTime");
+                            if (!reader.IsDBNull(endColIndex))
+                            {
+                                monitorObject.EndTime = reader.GetDateTime(endColIndex);
+                            }
+
+                            //' Read integers from database
+                            monitorObject.Severity = reader.GetDBInt("Severity");
+                            monitorObject.CurrentStep = reader.GetDBInt("CurrentStep");
+                            monitorObject.TotalSteps = reader.GetDBInt("TotalSteps");
+                        }
+                    }
+                }
+
+                //' Cleanup and disconnect SQL connection
+                command.Dispose();
+                connection.Close();
+            }
+            catch (Exception ex)
+            {
+                WriteEventLog(String.Format("An error occured when attempting to get OSD monitoring data object. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                return null;
+            }
+
+            return monitorObject;
         }
 
         private bool RemoveMDTComputer(SqlConnectionStringBuilder connectionString, string identity)
@@ -3373,7 +4876,7 @@ namespace ConfigMgrWebService
         private string AddMDTComputerIdentity(Dictionary<string, string> dictionary)
         {
             //' Get connection string
-            SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+            SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
             //' Connect to SQL server instance
             SqlConnection connection = new SqlConnection();
@@ -3480,7 +4983,7 @@ namespace ConfigMgrWebService
         private bool AddMDTComputerSetting(string identity, string computerName)
         {
             //' Get connection string
-            SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+            SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
             //' Connect to SQL server instance
             SqlConnection connection = new SqlConnection();
@@ -3528,7 +5031,7 @@ namespace ConfigMgrWebService
         private bool AddMDTRoleAssociationWithMember(string identity, string role)
         {
             //' Get connection string
-            SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+            SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
             //' Connect to SQL server instance
             SqlConnection connection = new SqlConnection();
@@ -3589,7 +5092,7 @@ namespace ConfigMgrWebService
             try
             {
                 //' Get connection string
-                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
                 //' Connect to SQL server instance
                 SqlConnection connection = new SqlConnection();
@@ -3715,7 +5218,7 @@ namespace ConfigMgrWebService
             try
             {
                 //' Get connection string
-                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
                 //' Connect to SQL server instance
                 SqlConnection connection = new SqlConnection();
@@ -3806,7 +5309,7 @@ namespace ConfigMgrWebService
             try
             {
                 //' Get connection string
-                SqlConnectionStringBuilder connectionString = GetSqlConnectionString();
+                SqlConnectionStringBuilder connectionString = GetSqlConnectionString(mdtDatabase);
 
                 //' Connect to SQL server instance
                 SqlConnection connection = new SqlConnection();
@@ -4120,14 +5623,14 @@ namespace ConfigMgrWebService
             return resourceId;
         }
 
-        private SqlConnectionStringBuilder GetSqlConnectionString()
+        private SqlConnectionStringBuilder GetSqlConnectionString(string databaseName)
         {
             //' Set database connection string
             SqlConnectionStringBuilder connectionString = new SqlConnectionStringBuilder();
             if (sqlInstance == null || sqlInstance == string.Empty)
             {
                 connectionString.DataSource = sqlServer;
-                connectionString.InitialCatalog = mdtDatabase;
+                connectionString.InitialCatalog = databaseName;
                 connectionString.IntegratedSecurity = true;
             }
             else
