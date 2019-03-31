@@ -91,6 +91,7 @@
     <Content Include="ConfigMgrWebService.asmx" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ADComputerFromDC.cs" />
     <Compile Include="ADComputer.cs" />
     <Compile Include="ADDomain.cs" />
     <Compile Include="ADGroup.cs" />

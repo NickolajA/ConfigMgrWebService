@@ -7,9 +7,11 @@ using System.Web;
 
 namespace ConfigMgrWebService
 {
-    public class ADDomain
+    public class ADDomain : IDisposable
     {
         private Domain _domain;
+        private string _typeName => this.GetType().FullName;
+        private bool _isDisp;
 
         public string DomainName { get; set; }
         public string DefaultNamingContext { get; set; }
@@ -28,14 +30,50 @@ namespace ConfigMgrWebService
             _domain = domain;
         }
 
-        public DomainControllerCollection GetAllDomainControllers() => _domain.FindAllDomainControllers();
+        public DomainControllerCollection GetAllDomainControllers()
+        {
+            this.CheckIfDisposed();
+            return _domain.FindAllDomainControllers();
+        }
 
-        public DomainController FindDomainController() => _domain.FindDomainController();
+        public DomainController FindDomainController()
+        {
+            this.CheckIfDisposed();
+            return _domain.FindDomainController();
+        }
 
+        #region IDISPOSABLE METHODS
+        public void Dispose()
+        {
+            this.Dispose(true);
+            GC.SuppressFinalize(this);
+        }
 
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_isDisp)
+                return;
+
+            if (disposing)
+                _domain.Dispose();
+
+            _isDisp = true;
+        }
+
+        private void CheckIfDisposed()
+        {
+            if (_isDisp)
+                throw new ObjectDisposedException(_typeName);
+        }
+
+        #endregion
 
         public static implicit operator ADDomain(Domain domain) => new ADDomain(domain);
 
-        public static implicit operator Domain(ADDomain adDomain) => adDomain._domain;
+        public static implicit operator Domain(ADDomain adDomain)
+        {
+            adDomain.CheckIfDisposed();
+            return adDomain._domain;
+        }
     }
 }

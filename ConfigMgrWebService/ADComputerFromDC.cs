@@ -4,22 +4,26 @@ using System.DirectoryServices;
 
 namespace ConfigMgrWebService
 {
-    public class ADComputer
+    public class ADComputerFromDC
     {
         public string SamAccountName { get; set; }
         public string CanonicalName { get; set; }
         public string DnsHostName { get; set; }
         public string DistinguishedName { get; set; }
+        public string RespondingDC { get; set; }
 
-        public ADComputer() { }
+        public ADComputerFromDC() { }
 
         /// <summary>
-        /// The 2nd constructor for <see cref="ADComputer"/>.  Using the specified <see cref="DirectoryEntry"/>,
-        /// this will populate the class's properties.
+        /// The 2nd constructor for <see cref="ADComputerFromDC"/>.  Using the specified <see cref="DirectoryEntry"/>,
+        /// this will populate the class's properties.  It also specfies the DomainController that responding with the
+        /// <see cref="DirectoryEntry"/>.
         /// </summary>
         /// <param name="dirEntry">The <see cref="DirectoryEntry"/> to use when populating this class's properties.</param>
-        public ADComputer(DirectoryEntry dirEntry)
+        /// <param name="dc">The responding domain controller of the <see cref="DirectoryEntry"/>.</param>
+        public ADComputerFromDC(DirectoryEntry dirEntry, string dc)
         {
+            this.RespondingDC = dc;
             using (dirEntry)
             {
                 this.DistinguishedName = dirEntry.Properties[ConfigMgrWebService.DISTINGUISHED_NAME].Value as string;
@@ -28,15 +32,5 @@ namespace ConfigMgrWebService
                 this.SamAccountName = dirEntry.Properties[ConfigMgrWebService.SAM_ACCOUNT_NAME].Value as string;
             }
         }
-
-        private ADComputer(ADComputerFromDC withDC)
-        {
-            this.CanonicalName = withDC.CanonicalName;
-            this.SamAccountName = withDC.SamAccountName;
-            this.DistinguishedName = withDC.DistinguishedName;
-            this.DnsHostName = withDC.DnsHostName;
-        }
-
-        public static explicit operator ADComputer(ADComputerFromDC compFromDC) => new ADComputer(compFromDC);
     }
 }

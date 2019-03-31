@@ -3246,13 +3246,16 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Check if a computer object exists in Active Directory")]
-        public ADComputer GetADComputerByDC(string secret, string computerName, string dc)
+        public ADComputer GetADComputer(string secret, string computerName) => (ADComputer)this.GetADComputerByDC(secret, computerName, null);
+
+        [WebMethod(Description = "Check if a computer object exists in Active Directory on the specified domain controller")]
+        public ADComputerFromDC GetADComputerByDC(string secret, string computerName, string dc)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
 
             //' Instatiate return value variable
-            ADComputer returnValue = null;
+            ADComputerFromDC returnValue = null;
 
             //' Validate secret key
             if (secret == secretKey)
@@ -3265,14 +3268,13 @@ namespace ConfigMgrWebService
                 DirectoryEntry directoryObject = null;
 
                 //' Get default naming context of current domain
-                //string defaultNamingContext = GetADDefaultNamingContext();
-
-                string currentDomain = String.Format("GC://{0}", defaultNamingContext);
+                Domain domain = Domain.GetComputerDomain();
+                string respondingDC = GetRespondingDomainController(domain, dc);
 
                 //' Construct directory entry for directory searcher
-                DirectoryEntry domain = new DirectoryEntry(currentDomain);
+                
                 string sFilter = String.Format("(&(objectClass=computer)((sAMAccountName={0}$)))", computerName);
-                DirectorySearcher directorySearcher = new DirectorySearcher(domain, sFilter, COMPUTER_PROPERTIES);
+                DirectorySearcher directorySearcher = new DirectorySearcher(domain.GetDirectoryEntry(), sFilter, COMPUTER_PROPERTIES);
 
                 //' Invoke directory searcher
                 try
@@ -3285,7 +3287,7 @@ namespace ConfigMgrWebService
 
                         if (directoryObject != null)
                         {
-                            returnValue = new ADComputer(directoryObject, null);
+                            returnValue = new ADComputerFromDC(directoryObject, respondingDC);
 
                             // Dispose directory object
                             directoryObject.Dispose();
@@ -3306,8 +3308,8 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
-        [WebMethod(Description = "Remove a computer object from Active Directory (Prohibits removal of domain controllers)")]
-        public bool RemoveADComputer(string secret, string samAccountName)
+        [WebMethod(Description = "Remove a computer object from Active Directory on the specified domain controller (Prohibits removal of domain controllers)")]
+        public bool RemoveADComputer(string secret, string samAccountName, string dc)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
