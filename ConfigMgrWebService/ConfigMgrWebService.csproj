@@ -44,17 +44,15 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="AdminUI.WqlQueryEngine, Version=5.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\References\AdminUI.WqlQueryEngine.dll</HintPath>
+    <Reference Include="AdminUI.WqlQueryEngine">
+      <HintPath>Assemblies\AdminUI.WqlQueryEngine.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.CodeDom.Providers.DotNetCompilerPlatform, Version=1.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.1.0.0\lib\net45\Microsoft.CodeDom.Providers.DotNetCompilerPlatform.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="Microsoft.ConfigurationManagement.ManagementProvider, Version=5.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\References\Microsoft.ConfigurationManagement.ManagementProvider.dll</HintPath>
+    <Reference Include="Microsoft.ConfigurationManagement.ManagementProvider">
+      <HintPath>Assemblies\Microsoft.ConfigurationManagement.ManagementProvider.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.DirectoryServices" />
@@ -97,6 +95,7 @@
     <Compile Include="ADDomain.cs" />
     <Compile Include="ADGroup.cs" />
     <Compile Include="ADOrganizationalUnit.cs" />
+    <Compile Include="Bases\BaseADObject.cs" />
     <Compile Include="CMApplication.cs" />
     <Compile Include="CMCollection.cs" />
     <Compile Include="CMOSDMonitor.cs" />
@@ -115,6 +114,9 @@
     <Compile Include="ConfigMgrWebService.asmx.cs">
       <DependentUpon>ConfigMgrWebService.asmx</DependentUpon>
     </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Assemblies\" />
   </ItemGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>

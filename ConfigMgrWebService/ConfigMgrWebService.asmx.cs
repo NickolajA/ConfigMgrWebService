@@ -3017,7 +3017,7 @@ namespace ConfigMgrWebService
                     foreach (string group in groups)
                     {
                         string attributeValue = GetADAttributeValue(group, "samAccountName");
-                        returnValue.Add(new ADGroup() { DistinguishedName = group, samAccountName = attributeValue });
+                        returnValue.Add(new ADGroup() { DistinguishedName = group, SamAccountName = attributeValue });
                     }
                 }
                 catch (Exception ex)
