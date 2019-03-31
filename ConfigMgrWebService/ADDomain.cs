@@ -42,6 +42,32 @@ namespace ConfigMgrWebService
             return _domain.FindDomainController();
         }
 
+        public bool IsDC(string computerName)
+        {
+            bool result = false;
+            DomainControllerCollection dcCol = this.GetAllDomainControllers();
+            if (dcCol.Count <= 0)
+                return result;
+
+            foreach (DomainController dc in dcCol)
+            {
+                using (dc)
+                {
+                    using (DirectoryEntry dcEntry = dc.GetDirectoryEntry())
+                    {
+                        if (computerName.Equals(
+                            dcEntry.Properties[ConfigMgrWebService.NAME].Value as string, 
+                            StringComparison.CurrentCultureIgnoreCase))
+                        {
+                            result = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
         #region IDISPOSABLE METHODS
         public void Dispose()
         {

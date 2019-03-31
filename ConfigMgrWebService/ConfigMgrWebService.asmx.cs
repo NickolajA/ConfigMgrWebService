@@ -3308,14 +3308,18 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Remove a computer object from Active Directory (Prohibits removal of domain controllers)")]
+        public bool RemoveADComputer(string secret, string samAccountName) => RemoveADComputerByDC(secret, samAccountName, null);
+
         [WebMethod(Description = "Remove a computer object from Active Directory on the specified domain controller (Prohibits removal of domain controllers)")]
-        public bool RemoveADComputer(string secret, string samAccountName, string dc)
+        public bool RemoveADComputerByDC(string secret, string samAccountName, string dc)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
 
             //' Instatiate return value variable
             bool returnValue = false;
+            string respondingDC = null;
 
             //' Validate secret key
             if (secret == secretKey)
@@ -3323,86 +3327,45 @@ namespace ConfigMgrWebService
                 //' Log that secret key was accepted
                 WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
 
-                //' Construct list for all domain controllers
-                List<string> domainControllers = new List<string>();
-
-                //' Configure domain context
-                Domain currentDomain = Domain.GetCurrentDomain();
-                PrincipalContext principalContext = new PrincipalContext(ContextType.Domain, currentDomain.Name, null, ContextOptions.Negotiate);
-                WriteEventLog(String.Format("Using current domain for domain controller lookup: {0}", currentDomain.Name), EventLogEntryType.Information);
-
-                //' Get a list of all domain controllers in the current domain
-                try
+                using (ADDomain domain = Domain.GetComputerDomain())
                 {
-                    foreach (DomainController domainController in currentDomain.DomainControllers)
+                    if (!domain.IsDC(samAccountName))
                     {
-                        //' Add domain controller distinguished name to list
-                        DirectoryEntry domainControllerEntry = domainController.GetDirectoryEntry();
-                        string domainControllerName = (string)domainControllerEntry.Properties["name"].Value;
-
-                        //' Debug
-                        WriteEventLog(String.Format("Detected domain controller name: {0}", domainControllerName), EventLogEntryType.Information);
-
-                        ComputerPrincipal dcPrincipal = ComputerPrincipal.FindByIdentity(principalContext, IdentityType.Name, domainControllerName);
-                        domainControllers.Add(dcPrincipal.DistinguishedName);
-
-                        //' Dispose objects
-                        domainControllerEntry.Dispose();
-                        dcPrincipal.Dispose();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    WriteEventLog(String.Format("Unable to detect domain controllers in current domain. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    returnValue = false;
-                }
-
-                if (domainControllers.Count >= 1)
-                {
-                    //' Get computer principal eligible for removal
-                    ComputerPrincipal computerPrincipal = ComputerPrincipal.FindByIdentity(principalContext, samAccountName);
-
-                    if (computerPrincipal != null)
-                    {
-                        if (domainControllers.Contains(computerPrincipal.DistinguishedName) == false)
+                        WriteEventLog(string.Format("{0} is not a domain controller.  Continuing with removal.", samAccountName), EventLogEntryType.Information);
+                        ComputerPrincipal compPrin = FindComputerObject(samAccountName, dc, out respondingDC);
+                        if (compPrin == null)
                         {
+                            WriteEventLog(string.Format("{0} was not found in active directory!", samAccountName), EventLogEntryType.Error);
+                        }
+                        else
+                        {
+                            DirectoryEntry dirEntry = (DirectoryEntry)compPrin.GetUnderlyingObject();
                             try
                             {
-                                //' Delete computer object including any leaf objects
-                                DirectoryEntry subEntry = (DirectoryEntry)computerPrincipal.GetUnderlyingObject();
-
-                                if (subEntry != null)
-                                {
-                                    subEntry.DeleteTree();
-                                    subEntry.CommitChanges();
-
-                                    WriteEventLog(String.Format("Successfully removed computer object named '{0}'", computerPrincipal.Name), EventLogEntryType.Information);
-                                }
-
-                                //' Dispose object
-                                subEntry.Dispose();
-
+                                dirEntry.DeleteTree();
+                                dirEntry.CommitChanges();
                                 returnValue = true;
+                                WriteEventLog(string.Format("{0} was successfully deleted from Active Directory on {1}.", samAccountName, respondingDC), EventLogEntryType.Information);
                             }
-                            catch (Exception ex)
+                            catch (DirectoryServicesCOMException comEx)
                             {
-                                WriteEventLog(String.Format("Unable to remove computer object '{0}'. Error message: {1}", samAccountName, ex.Message), EventLogEntryType.Error);
-                                returnValue = false;
+                                WriteEventLog(string.Format("{0}:{1}{1}{2}", comEx.Message, Environment.NewLine, comEx.ExtendedErrorMessage), EventLogEntryType.Error);
+                            }
+                            catch (AppDomainUnloadedException unloadEx)
+                            {
+                                WriteEventLog(string.Format("{0}{1}{1}{2}", unloadEx.Message, Environment.NewLine, unloadEx.StackTrace), EventLogEntryType.Error);
+                            }
+                            catch (Exception e)
+                            {
+                                WriteEventLog(e.Message, EventLogEntryType.Error);
                             }
                         }
-
-                        //' Dispose object
-                        computerPrincipal.Dispose();
                     }
                     else
                     {
-                        WriteEventLog(String.Format("Unable to find a computer object named '{0}'", computerPrincipal.Name), EventLogEntryType.Information);
+                        WriteEventLog(string.Format("{0} matches the name of an existing domain controller!  We are not allowed to remove domain controllers.  Stopping the execution.", samAccountName), EventLogEntryType.Error);
                     }
                 }
-
-                //' Dispose objects
-                currentDomain.Dispose();
-                principalContext.Dispose();
             }
 
             MethodEnd(method);
@@ -5876,6 +5839,22 @@ namespace ConfigMgrWebService
             return subnetList;
         }
 
+        private ComputerPrincipal FindComputerObject(string name, string dc, out string respondingDC)
+        {
+            ComputerPrincipal returnValue = null;
+            string realDC = null;
+            using (Domain domain = Domain.GetComputerDomain())
+            {
+                realDC = GetRespondingDomainController(domain, dc);
+                PrincipalContext prinCtx = new PrincipalContext(ContextType.Domain, realDC, null, ContextOptions.Negotiate);
+                WriteEventLog(string.Format("Using the following domain controller for the computer lookup: {0}", realDC), EventLogEntryType.Information);
+
+                returnValue = ComputerPrincipal.FindByIdentity(prinCtx, name);
+            }
+            respondingDC = realDC;
+            return returnValue;
+        }
+
         private Domain GetDomainFromDN(string ouPath)
         {
             string[] dcStrings = ouPath.Split(
@@ -5899,6 +5878,14 @@ namespace ConfigMgrWebService
 
             Domain retDomain = Domain.GetDomain(ctx);
             return retDomain;
+        }
+
+        private string GetLDAPString(ADDomain domain, string dc, out string respondingDC)
+        {
+            string format = "LDAP://{0}/{1}";
+            respondingDC = GetRespondingDomainController(domain, dc);
+            string ldapStr = string.Format(format, respondingDC, domain.DefaultNamingContext);
+            return ldapStr;
         }
 
         private string GetRespondingDomainController(Domain domain, string dc)

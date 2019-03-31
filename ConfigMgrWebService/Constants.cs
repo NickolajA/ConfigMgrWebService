@@ -5,6 +5,7 @@ namespace ConfigMgrWebService
     public partial class ConfigMgrWebService
     {
         internal const string COMMON_NAME = "cn";
+        internal const string COMPUTER = "computer";
         internal const string DISTINGUISHED_NAME = "distinguishedName";
         internal const string DNS_HOST_NAME = "dNSHostName";
         internal const string NAME = "name";
