@@ -1,26 +1,27 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Web;
-using System.DirectoryServices;
-using System.Collections;
-using System.Diagnostics;
-using System.Web.Services;
-using System.Management;
-using System.Web.Configuration;
-using System.Data.SqlClient;
+﻿using Microsoft.ConfigurationManagement.ManagementProvider.WqlQueryEngine;
 using Microsoft.ConfigurationManagement.ManagementProvider;
-using Microsoft.ConfigurationManagement.ManagementProvider.WqlQueryEngine;
-using System.Text;
-using System.Data;
-using System.Reflection;
-using System.DirectoryServices.ActiveDirectory;
-using System.DirectoryServices.AccountManagement;
-using System.Net;
-using System.Security;
-using System.Runtime.InteropServices;
-using System.Globalization;
 using SqlExtensions;
+using System;
+using System.Collections.Generic;
+using System.Collections;
+using System.ComponentModel;
+using System.Data.SqlClient;
+using System.Data;
+using System.Diagnostics;
+using System.DirectoryServices.AccountManagement;
+using System.DirectoryServices.ActiveDirectory;
+using System.DirectoryServices;
+using System.Globalization;
+using System.Linq;
+using System.Management;
+using System.Net;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security;
+using System.Text;
+using System.Web.Configuration;
+using System.Web.Services;
+using System.Web;
 
 namespace SqlExtensions
 {
@@ -41,9 +42,9 @@ namespace ConfigMgrWebService
 {
     [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (1.7.0)", Namespace = "http://www.scconfigmgr.com")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
-    [System.ComponentModel.ToolboxItem(false)]
+    [ToolboxItem(false)]
 
-    public class ConfigMgrWebService : System.Web.Services.WebService
+    public partial class ConfigMgrWebService : WebService
     {
         //' Read required application settings from web.config
         private string secretKey = WebConfigurationManager.AppSettings["SecretKey"];
@@ -137,7 +138,7 @@ namespace ConfigMgrWebService
                         string userName = (string)userRelation.GetPropertyValue("UniqueUserName");
                         relations.Add(userName);
                     }
-                }
+                
             }
 
             MethodEnd(method);
@@ -3268,14 +3269,8 @@ namespace ConfigMgrWebService
 
                 //' Construct directory entry for directory searcher
                 DirectoryEntry domain = new DirectoryEntry(currentDomain);
-                DirectorySearcher directorySearcher = new DirectorySearcher(domain)
-                {
-                    Filter = String.Format("(&(objectClass=computer)((sAMAccountName={0}$)))", computerName)
-                };
-                directorySearcher.PropertiesToLoad.Add("distinguishedName");
-                directorySearcher.PropertiesToLoad.Add("sAMAccountName");
-                directorySearcher.PropertiesToLoad.Add("cn");
-                directorySearcher.PropertiesToLoad.Add("dNSHostName");
+                string sFilter = String.Format("(&(objectClass=computer)((sAMAccountName={0}$)))", computerName);
+                DirectorySearcher directorySearcher = new DirectorySearcher(domain, sFilter, COMPUTER_PROPERTIES);
 
                 //' Invoke directory searcher
                 try
@@ -3288,10 +3283,7 @@ namespace ConfigMgrWebService
 
                         if (directoryObject != null)
                         {
-                            returnValue.SamAccountName = (string)directoryObject.Properties["sAMAccountName"].Value;
-                            returnValue.CanonicalName = (string)directoryObject.Properties["cn"].Value;
-                            returnValue.DistinguishedName = (string)directoryObject.Properties["distinguishedName"].Value;
-                            returnValue.DnsHostName = (string)directoryObject.Properties["dNSHostName"].Value;
+                            returnValue = new ADComputer(directoryObject, null);
 
                             // Dispose directory object
                             directoryObject.Dispose();

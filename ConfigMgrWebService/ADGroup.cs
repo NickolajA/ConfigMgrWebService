@@ -6,10 +6,8 @@ using System.Web;
 
 namespace ConfigMgrWebService
 {
-    public class ADGroup : BaseADObject
+    public class ADGroup
     {
-        internal override string[] PropertiesToLoad => null;
-
         public string SamAccountName { get; set; }
         public string DistinguishedName { get; set; }
         public string RespondingDC { get; }

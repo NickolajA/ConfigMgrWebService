@@ -6,13 +6,8 @@ using System.Web;
 
 namespace ConfigMgrWebService
 {
-    public class ADComputer : BaseADObject
+    public class ADComputer
     {
-        internal override string[] PropertiesToLoad => new string[4]
-        {
-            "distinguishedName", "cn", "sAMAccountName", "dNSHostName"
-        };
-
         public string SamAccountName { get; set; }
         public string CanonicalName { get; set; }
         public string DnsHostName { get; set; }

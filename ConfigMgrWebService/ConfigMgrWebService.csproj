@@ -95,13 +95,16 @@
     <Compile Include="ADDomain.cs" />
     <Compile Include="ADGroup.cs" />
     <Compile Include="ADOrganizationalUnit.cs" />
-    <Compile Include="Bases\BaseADObject.cs" />
+    <None Include="Bases\BaseADObject.cs" />
     <Compile Include="CMApplication.cs" />
     <Compile Include="CMCollection.cs" />
     <Compile Include="CMOSDMonitor.cs" />
     <Compile Include="CMOSImage.cs" />
     <Compile Include="CMResource.cs" />
     <Compile Include="CMUserDeviceRelation.cs" />
+    <Compile Include="Constants.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="IPAddresses.cs" />
     <Compile Include="MDTComputer.cs" />
     <Compile Include="MDTRole.cs" />
