@@ -19,6 +19,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Web.Configuration;
 using System.Web.Services;
 using System.Web;
@@ -138,7 +139,7 @@ namespace ConfigMgrWebService
                         string userName = (string)userRelation.GetPropertyValue("UniqueUserName");
                         relations.Add(userName);
                     }
-                
+                }
             }
 
             MethodEnd(method);
@@ -3245,13 +3246,13 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Check if a computer object exists in Active Directory")]
-        public ADComputer GetADComputer(string secret, string computerName)
+        public ADComputer GetADComputerByDC(string secret, string computerName, string dc)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
             MethodBegin(method);
 
             //' Instatiate return value variable
-            ADComputer returnValue = new ADComputer();
+            ADComputer returnValue = null;
 
             //' Validate secret key
             if (secret == secretKey)
@@ -3264,7 +3265,8 @@ namespace ConfigMgrWebService
                 DirectoryEntry directoryObject = null;
 
                 //' Get default naming context of current domain
-                string defaultNamingContext = GetADDefaultNamingContext();
+                //string defaultNamingContext = GetADDefaultNamingContext();
+
                 string currentDomain = String.Format("GC://{0}", defaultNamingContext);
 
                 //' Construct directory entry for directory searcher
@@ -3412,7 +3414,7 @@ namespace ConfigMgrWebService
             MethodBegin(method);
 
             //' Instatiate return value variable
-            ADDomain domain = new ADDomain();
+            ADDomain domain = null;
 
             //' Validate secret key
             if (secret == secretKey)
@@ -3422,8 +3424,38 @@ namespace ConfigMgrWebService
 
                 try
                 {
-                    domain.DefaultNamingContext = GetADDefaultNamingContext();
-                    domain.DomainName = GetADDomainName();
+                    DirectoryContext ctx = new DirectoryContext(DirectoryContextType.Domain);
+                    domain = Domain.GetDomain(ctx);
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for Active Directory domain details. Error message: { ex.Message } ", EventLogEntryType.Error);
+                }
+            }
+
+            MethodEnd(method);
+            return domain;
+        }
+
+        [WebMethod(Description = "Get the domain details for the specified domain")]
+        public ADDomain GetADDomainByName(string secret, string domainName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Instatiate return value variable
+            ADDomain domain = null;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                try
+                {
+                    DirectoryContext ctx = new DirectoryContext(DirectoryContextType.Domain, domainName);
+                    domain = Domain.GetDomain(ctx);
                 }
                 catch (Exception ex)
                 {
@@ -3459,42 +3491,13 @@ namespace ConfigMgrWebService
                     }
 
                     //' Get the base OU directory entry and start a one level search
-                    using (DirectorySearcher directorySearcher = new DirectorySearcher(new DirectoryEntry(distinguishedName)))
+                    using (DirectorySearcher directorySearcher = new DirectorySearcher(new DirectoryEntry(distinguishedName),
+                        "(objectCategory=organizationalUnit)", ORG_UNIT_PROPERTIES, SearchScope.Subtree))
                     {
-                        //' Define filter options for searcher
-                        directorySearcher.Filter = "(objectCategory=organizationalUnit)";
-                        directorySearcher.SearchScope = SearchScope.OneLevel;
-                        directorySearcher.PropertiesToLoad.Add("name");
-                        directorySearcher.PropertiesToLoad.Add("path");
 
-                        //' Enumerate top level containers
                         foreach (SearchResult container in directorySearcher.FindAll())
                         {
-                            //' Search for children
-                            SearchResult childResult = null;
-                            using (DirectorySearcher childDirectorySearcher = new DirectorySearcher(new DirectoryEntry(container.Path)))
-                            {
-                                //' Define filter options for searcher
-                                childDirectorySearcher.Filter = "(objectCategory=organizationalUnit)";
-                                childDirectorySearcher.SearchScope = SearchScope.OneLevel;
-                                childDirectorySearcher.PropertiesToLoad.Add("name");
-                                childResult = childDirectorySearcher.FindOne();
-                            }
-
-                            //' Determine if child exist
-                            bool childPresence = false;
-                            if (childResult != null)
-                            {
-                                childPresence = true;
-                            }
-
-                            //' Construct a new object to hold container information
-                            ADOrganizationalUnit orgUnit = new ADOrganizationalUnit()
-                            {
-                                HasChildren = childPresence,
-                                Name = container.Properties["name"][0].ToString(),
-                                DistinguishedName = container.Path
-                            };
+                            ADOrganizationalUnit orgUnit = new ADOrganizationalUnit(container.GetDirectoryEntry());
                             containers.Add(orgUnit);
                         }
                     }
@@ -5869,6 +5872,48 @@ namespace ConfigMgrWebService
             }
 
             return subnetList;
+        }
+
+        private Domain GetDomainFromDN(string ouPath)
+        {
+            string[] dcStrings = ouPath.Split(
+                new string[1] { "," }, StringSplitOptions.RemoveEmptyEntries).Where(
+                    x => x.StartsWith("DC=", StringComparison.CurrentCultureIgnoreCase)).ToArray();
+
+            string[] cutOut = new string[dcStrings.Length];
+            for (int i = 0; i < dcStrings.Length; i++)
+            {
+                cutOut[i] = Regex.Match(dcStrings[i], @"^[D|d][C|c]\=(\S{1,})").Groups[1].Value;
+            }
+            string fqdn = string.Join(".", cutOut);
+            return GetDomainFromString(fqdn);
+        }
+
+        private Domain GetDomainFromString(string domainName)
+        {
+            DirectoryContext ctx = string.IsNullOrEmpty(domainName)
+                ? new DirectoryContext(DirectoryContextType.Domain)
+                : new DirectoryContext(DirectoryContextType.Domain, domainName);
+
+            Domain retDomain = Domain.GetDomain(ctx);
+            return retDomain;
+        }
+
+        private string GetRespondingDomainController(Domain domain, string dc)
+        {
+            string retName = null;
+            if (string.IsNullOrEmpty(dc))
+            {
+                using (DomainController domCon = domain.FindDomainController())
+                {
+                    retName = domCon.Name;
+                }
+            }
+            else retName = !dc.Contains(domain.Name)
+                    ? string.Format("{0}.{1}", dc, domain.Name)
+                    : dc;
+
+            return retName;
         }
 
         private static int FindMissingNumber(List<int> list)

@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.DirectoryServices;
-using System.Linq;
-using System.Web;
 
 namespace ConfigMgrWebService
 {
@@ -15,15 +13,23 @@ namespace ConfigMgrWebService
         public string RespondingDC { get; }
 
         public ADComputer() { }
-        public ADComputer(DirectoryEntry de, string dc)
+
+        /// <summary>
+        /// The 2nd constructor for <see cref="ADComputer"/>.  Using the specified <see cref="DirectoryEntry"/>,
+        /// this will populate the class's properties.  It also specfies the DomainController that responding with the
+        /// <see cref="DirectoryEntry"/>.
+        /// </summary>
+        /// <param name="dirEntry">The <see cref="DirectoryEntry"/> to use when populating this class's properties.</param>
+        /// <param name="dc">The responding domain controller of the <see cref="DirectoryEntry"/>.</param>
+        public ADComputer(DirectoryEntry dirEntry, string dc)
         {
             this.RespondingDC = dc;
-            using (de)
+            using (dirEntry)
             {
-                this.DistinguishedName = de.Properties["distinguishedName"].Value as string;
-                this.CanonicalName = de.Properties["cn"].Value as string;
-                this.DnsHostName = de.Properties["dNSHostName"].Value as string;
-                this.SamAccountName = de.Properties["sAMAccountName"].Value as string;
+                this.DistinguishedName = dirEntry.Properties[ConfigMgrWebService.DISTINGUISHED_NAME].Value as string;
+                this.CanonicalName = dirEntry.Properties[ConfigMgrWebService.COMMON_NAME].Value as string;
+                this.DnsHostName = dirEntry.Properties[ConfigMgrWebService.DNS_HOST_NAME].Value as string;
+                this.SamAccountName = dirEntry.Properties[ConfigMgrWebService.SAM_ACCOUNT_NAME].Value as string;
             }
         }
     }
