@@ -3319,6 +3319,8 @@ namespace ConfigMgrWebService
 
             //' Instatiate return value variable
             bool returnValue = false;
+            ComputerPrincipal compPrin = null;
+            DirectoryEntry dirEntry = null;
             string respondingDC = null;
 
             //' Validate secret key
@@ -3332,14 +3334,14 @@ namespace ConfigMgrWebService
                     if (!domain.IsDC(samAccountName))
                     {
                         WriteEventLog(string.Format("{0} is not a domain controller.  Continuing with removal.", samAccountName), EventLogEntryType.Information);
-                        ComputerPrincipal compPrin = FindComputerObject(samAccountName, dc, out respondingDC);
+                        compPrin = FindComputerObject(samAccountName, dc, out respondingDC);
                         if (compPrin == null)
                         {
                             WriteEventLog(string.Format("{0} was not found in active directory!", samAccountName), EventLogEntryType.Error);
                         }
                         else
                         {
-                            DirectoryEntry dirEntry = (DirectoryEntry)compPrin.GetUnderlyingObject();
+                            dirEntry = (DirectoryEntry)compPrin.GetUnderlyingObject();
                             try
                             {
                                 dirEntry.DeleteTree();
@@ -3367,6 +3369,9 @@ namespace ConfigMgrWebService
                     }
                 }
             }
+
+            dirEntry.Dispose();
+            compPrin.Dispose();
 
             MethodEnd(method);
             return returnValue;
