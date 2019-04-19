@@ -2728,309 +2728,30 @@ namespace ConfigMgrWebService
         }
 
         [WebMethod(Description = "Move a computer in Active Directory to a specific organizational unit")]
-        public bool SetADOrganizationalUnitForComputer(string secret, string organizationalUnitLocation, string computerName)
-        {
-            MethodBase method = MethodBase.GetCurrentMethod();
-            MethodBegin(method);
-
-            //' Variable for return value
-            bool returnValue = false;
-
-            //' Validate secret key
-            if (secret == secretKey)
-            {
-                //' Log that secret key was accepted
-                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
-
-                //' Determine if ldap prefix needs to be appended
-                if (organizationalUnitLocation.StartsWith("LDAP://") == false)
-                {
-                    organizationalUnitLocation = String.Format("LDAP://{0}", organizationalUnitLocation);
-                }
-
-                //' Get AD object distinguished name
-                string currentDistinguishedName = GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName);
-
-                if (!String.IsNullOrEmpty(currentDistinguishedName))
-                {
-                    try
-                    {
-                        //' Move current object to new location
-                        DirectoryEntry currentObject = new DirectoryEntry(currentDistinguishedName);
-                        DirectoryEntry newLocation = new DirectoryEntry(organizationalUnitLocation);
-                        currentObject.MoveTo(newLocation, currentObject.Name);
-
-                        returnValue = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        WriteEventLog(String.Format("An error occured when attempting to move Active Directory object. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    }
-                }
-            }
-
-            MethodEnd(method);
-            return returnValue;
-        }
+        public bool SetADOrganizationalUnitForComputer(string secret, string organizationalUnitLocation, string computerName) =>
+            this.SetADOrganizationalUnitForComputerByDC(secret, organizationalUnitLocation, computerName, null);
 
         [WebMethod(Description = "Set ManagedBy attribute for a specific computer with specified user name")]
-        public bool SetADComputerManagedBy(string secret, string computerName, string userName)
-        {
-            MethodBase method = MethodBase.GetCurrentMethod();
-            MethodBegin(method);
-
-            //' Variable for return value
-            bool returnValue = false;
-
-            //' Validate secret key
-            if (secret == secretKey)
-            {
-                //' Log that secret key was accepted
-                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
-
-                //' Get AD computer and user object distinguished names
-                string computerDistinguishedName = GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName);
-                string userDistinguishedName = (GetADObject(userName, ADObjectClass.User, ADObjectType.distinguishedName)).Remove(0, 7);
-
-                if (!String.IsNullOrEmpty(computerDistinguishedName) && !String.IsNullOrEmpty(userDistinguishedName))
-                {
-                    try
-                    {
-                        //' Add user to ManagedBy attribute and commit
-                        DirectoryEntry computerEntry = new DirectoryEntry(computerDistinguishedName);
-                        computerEntry.Properties["ManagedBy"].Clear();
-                        computerEntry.Properties["ManagedBy"].Add(userDistinguishedName);
-                        computerEntry.CommitChanges();
-
-                        //' Dispose object
-                        computerEntry.Dispose();
-
-                        returnValue = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        WriteEventLog(String.Format("An error occured when attempting to add a user as ManagedBy for a computer object in Active Directory. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    }
-                }
-            }
-
-            MethodEnd(method);
-            return returnValue;
-        }
+        public bool SetADComputerManagedBy(string secret, string computerName, string userName) => 
+            this.SetADComputerManagedBy(secret, computerName, null);
 
         [WebMethod(Description = "Add a computer in Active Directory to a specific group")]
-        public bool AddADComputerToGroup(string secret, string groupName, string computerName)
-        {
-            MethodBase method = MethodBase.GetCurrentMethod();
-            MethodBegin(method);
-
-            //' Variable for return value
-            bool returnValue = false;
-
-            //' Validate secret key
-            if (secret == secretKey)
-            {
-                //' Log that secret key was accepted
-                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
-
-                //' Get AD object distinguished name for computer and group
-                string computerDistinguishedName = (GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName)).Remove(0, 7);
-                string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
-
-                if (!String.IsNullOrEmpty(computerDistinguishedName) && !String.IsNullOrEmpty(groupDistinguishedName))
-                {
-                    try
-                    {
-                        //' Add computer to group and commit
-                        DirectoryEntry groupEntry = new DirectoryEntry(groupDistinguishedName);
-                        groupEntry.Properties["member"].Add(computerDistinguishedName);
-                        groupEntry.CommitChanges();
-
-                        //' Dispose object
-                        groupEntry.Dispose();
-
-                        returnValue = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        WriteEventLog(String.Format("An error occured when attempting to add a computer object in Active Directory to a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    }
-                }
-            }
-
-            MethodEnd(method);
-            return returnValue;
-        }
+        public bool AddADComputerToGroup(string secret, string groupName, string computerName) => 
+            this.AddADComputerToGroupByDC(secret, groupName, computerName, null);
 
         [WebMethod(Description = "Add a user in Active Directory to a specific group")]
-        public bool AddADUserToGroup(string secret, string groupName, string userName)
-        {
-            MethodBase method = MethodBase.GetCurrentMethod();
-            MethodBegin(method);
-
-            //' Variable for return value
-            bool returnValue = false;
-
-            //' Validate secret key
-            if (secret == secretKey)
-            {
-                //' Log that secret key was accepted
-                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
-
-                //' Get AD object distinguished name for computer and group
-                string userDistinguishedName = (GetADObject(userName, ADObjectClass.User, ADObjectType.distinguishedName)).Remove(0, 7);
-                string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
-
-                if (!String.IsNullOrEmpty(userDistinguishedName) && !String.IsNullOrEmpty(groupDistinguishedName))
-                {
-                    try
-                    {
-                        //' Add user to group and commit
-                        DirectoryEntry groupEntry = new DirectoryEntry(groupDistinguishedName);
-                        groupEntry.Properties["member"].Add(userDistinguishedName);
-                        groupEntry.CommitChanges();
-
-                        //' Dispose object
-                        groupEntry.Dispose();
-
-                        returnValue = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        WriteEventLog(String.Format("An error occured when attempting to add an user object in Active Directory to a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    }
-                }
-            }
-
-            MethodEnd(method);
-            return returnValue;
-        }
+        public bool AddADUserToGroup(string secret, string groupName, string userName) => 
+            this.AddADUserToGroupByDC(secret, groupName, userName, null);
 
         [WebMethod(Description = "Remove a computer in Active Directory from a specific group")]
-        public bool RemoveADComputerFromGroup(string secret, string groupName, string computerName)
-        {
-            MethodBase method = MethodBase.GetCurrentMethod();
-            MethodBegin(method);
-
-            //' Set return value variable
-            bool returnValue = false;
-
-            //' Validate secret key
-            if (secret == secretKey)
-            {
-                //' Log that secret key was accepted
-                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
-
-                //' Get AD object distinguished name for computer and group
-                string computerDistinguishedName = (GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName)).Remove(0,7);
-                string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
-
-                if (!String.IsNullOrEmpty(computerDistinguishedName) && !String.IsNullOrEmpty(groupDistinguishedName))
-                {
-                    try
-                    {
-                        //' Check if computer is member of group
-                        DirectoryEntry groupEntry = new DirectoryEntry(groupDistinguishedName);
-                        List<string> groupMembers = GetADGroupMemberList(groupEntry);
-                        bool memberOf = groupMembers.Contains(computerDistinguishedName);
-                        if (memberOf == true)
-                        {
-                            //' Remove computer from group and commit
-                            groupEntry.Properties["member"].Remove(computerDistinguishedName);
-                            groupEntry.CommitChanges();
-
-                            returnValue = true;
-                        }
-
-                        //' Dispose object
-                        groupEntry.Dispose();
-                    }
-                    catch (Exception ex)
-                    {
-                        WriteEventLog(String.Format("An error occured when attempting to remove a computer object in Active Directory from a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    }
-                }
-            }
-
-            MethodEnd(method);
-            return returnValue;
-        }
+        public bool RemoveADComputerFromGroup(string secret, string groupName, string computerName) =>
+            this.RemoveADComputerFromGroupByDC(secret, groupName, computerName, null);
 
         [WebMethod(Description = "Get all members of an Active Directory group")]
-        public List<string> GetADGroupMembers(string secret, string groupName)
-        {
-            MethodBase method = MethodBase.GetCurrentMethod();
-            MethodBegin(method);
-
-            //' Set return value variable
-            List<string> returnValue = new List<string>();
-
-            //' Validate secret key
-            if (secret == secretKey)
-            {
-                //' Log that secret key was accepted
-                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
-
-                //' Get AD group object
-                string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
-
-                if (!String.IsNullOrEmpty(groupDistinguishedName))
-                {
-                    try
-                    {
-                        DirectoryEntry groupEntry = new DirectoryEntry(groupDistinguishedName);
-                        returnValue = GetADGroupMemberList(groupEntry);
-                    }
-                    catch (Exception ex)
-                    {
-                        WriteEventLog(String.Format("An error occured when retrieving Active Directory group members. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                    }
-                }
-            }
-
-            MethodEnd(method);
-            return returnValue;
-        }
+        public List<string> GetADGroupMembers(string secret, string groupName) => this.GetADGroupMembersByDC(secret, groupName, null);
 
         [WebMethod(Description = "Get Active Directory groups for a specific user")]
-        public List<ADGroup> GetADGroupsByUser(string secret, string userName)
-        {
-            MethodBase method = MethodBase.GetCurrentMethod();
-            MethodBegin(method);
-
-            //' Set return value variable
-            List<ADGroup> returnValue = new List<ADGroup>();
-
-            //' Validate secret key
-            if (secret == secretKey)
-            {
-                //' Log that secret key was accepted
-                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
-
-                try
-                {
-                    //' Get AD user object
-                    string userDistinguishedName = GetADObject(userName, ADObjectClass.User, ADObjectType.distinguishedName);
-
-                    //' Get AD groups for user distinguished name
-                    ArrayList groupMemberships = new ArrayList();
-                    ArrayList groups = GetADAttributeValues("memberOf", userDistinguishedName, groupMemberships, true);
-
-                    foreach (string group in groups)
-                    {
-                        string attributeValue = GetADAttributeValue(group, "samAccountName");
-                        returnValue.Add(new ADGroup() { DistinguishedName = group, SamAccountName = attributeValue });
-                    }
-                }
-                catch (Exception ex)
-                {
-                    WriteEventLog($"An error occurred while retrieving Active Directory group memberships for user. Error message: { ex.Message }", EventLogEntryType.Error);
-                }
-            }
-
-            MethodEnd(method);
-            return returnValue;
-        }
+        public List<ADGroup> GetADGroupsByUser(string secret, string userName) => this.GetADGroupsByUserByDC(secret, userName, null);
 
         [WebMethod(Description = "Set the description field for a computer in Active Directory")]
         public bool SetADComputerDescription(string secret, string computerName, string description)
@@ -3248,134 +2969,8 @@ namespace ConfigMgrWebService
         [WebMethod(Description = "Check if a computer object exists in Active Directory")]
         public ADComputer GetADComputer(string secret, string computerName) => (ADComputer)this.GetADComputerByDC(secret, computerName, null);
 
-        [WebMethod(Description = "Check if a computer object exists in Active Directory on the specified domain controller")]
-        public ADComputerFromDC GetADComputerByDC(string secret, string computerName, string dc)
-        {
-            MethodBase method = MethodBase.GetCurrentMethod();
-            MethodBegin(method);
-
-            //' Instatiate return value variable
-            ADComputerFromDC returnValue = null;
-
-            //' Validate secret key
-            if (secret == secretKey)
-            {
-                //' Log that secret key was accepted
-                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
-
-                //' Set empty value for search result
-                SearchResult searchResult = null;
-                DirectoryEntry directoryObject = null;
-
-                //' Get default naming context of current domain
-                Domain domain = Domain.GetComputerDomain();
-                string respondingDC = GetRespondingDomainController(domain, dc);
-
-                //' Construct directory entry for directory searcher
-                
-                string sFilter = String.Format("(&(objectClass=computer)((sAMAccountName={0}$)))", computerName);
-                DirectorySearcher directorySearcher = new DirectorySearcher(domain.GetDirectoryEntry(), sFilter, COMPUTER_PROPERTIES);
-
-                //' Invoke directory searcher
-                try
-                {
-                    searchResult = directorySearcher.FindOne();
-                    if (searchResult != null)
-                    {
-                        //' Get computer object from search result
-                        directoryObject = searchResult.GetDirectoryEntry();
-
-                        if (directoryObject != null)
-                        {
-                            returnValue = new ADComputerFromDC(directoryObject, respondingDC);
-
-                            // Dispose directory object
-                            directoryObject.Dispose();
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    WriteEventLog(String.Format("An error occured when attempting to locate Active Directory object. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                }
-
-                //' Dispose objects
-                directorySearcher.Dispose();
-                domain.Dispose();
-            }
-
-            MethodEnd(method);
-            return returnValue;
-        }
-
         [WebMethod(Description = "Remove a computer object from Active Directory (Prohibits removal of domain controllers)")]
         public bool RemoveADComputer(string secret, string samAccountName) => RemoveADComputerByDC(secret, samAccountName, null);
-
-        [WebMethod(Description = "Remove a computer object from Active Directory on the specified domain controller (Prohibits removal of domain controllers)")]
-        public bool RemoveADComputerByDC(string secret, string samAccountName, string dc)
-        {
-            MethodBase method = MethodBase.GetCurrentMethod();
-            MethodBegin(method);
-
-            //' Instatiate return value variable
-            bool returnValue = false;
-            ComputerPrincipal compPrin = null;
-            DirectoryEntry dirEntry = null;
-            string respondingDC = null;
-
-            //' Validate secret key
-            if (secret == secretKey)
-            {
-                //' Log that secret key was accepted
-                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
-
-                using (ADDomain domain = Domain.GetComputerDomain())
-                {
-                    if (!domain.IsDC(samAccountName))
-                    {
-                        WriteEventLog(string.Format("{0} is not a domain controller.  Continuing with removal.", samAccountName), EventLogEntryType.Information);
-                        compPrin = FindComputerObject(samAccountName, dc, out respondingDC);
-                        if (compPrin == null)
-                        {
-                            WriteEventLog(string.Format("{0} was not found in active directory!", samAccountName), EventLogEntryType.Error);
-                        }
-                        else
-                        {
-                            dirEntry = (DirectoryEntry)compPrin.GetUnderlyingObject();
-                            try
-                            {
-                                dirEntry.DeleteTree();
-                                dirEntry.CommitChanges();
-                                returnValue = true;
-                                WriteEventLog(string.Format("{0} was successfully deleted from Active Directory on {1}.", samAccountName, respondingDC), EventLogEntryType.Information);
-                            }
-                            catch (DirectoryServicesCOMException comEx)
-                            {
-                                WriteEventLog(string.Format("{0}:{1}{1}{2}", comEx.Message, Environment.NewLine, comEx.ExtendedErrorMessage), EventLogEntryType.Error);
-                            }
-                            catch (AppDomainUnloadedException unloadEx)
-                            {
-                                WriteEventLog(string.Format("{0}{1}{1}{2}", unloadEx.Message, Environment.NewLine, unloadEx.StackTrace), EventLogEntryType.Error);
-                            }
-                            catch (Exception e)
-                            {
-                                WriteEventLog(e.Message, EventLogEntryType.Error);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        WriteEventLog(string.Format("{0} matches the name of an existing domain controller!  We are not allowed to remove domain controllers.  Stopping the execution.", samAccountName), EventLogEntryType.Error);
-                    }
-                }
-            }
-
-            dirEntry.Dispose();
-            compPrin.Dispose();
-
-            MethodEnd(method);
-            return returnValue;
-        }
 
         [WebMethod(Description = "Get the domain details for current domain")]
         public ADDomain GetADDomain(string secret)
@@ -5627,70 +5222,7 @@ namespace ConfigMgrWebService
             return Domain.GetComputerDomain().Name;
         }
 
-        private string GetADObject(string name, ADObjectClass objectClass, ADObjectType objectType)
-        {
-            //' Set empty value for return object and search result
-            string returnValue = string.Empty;
-            SearchResult searchResult = null;
-
-            //' Get default naming context of current domain
-            string defaultNamingContext = GetADDefaultNamingContext();
-            string currentDomain = String.Format("LDAP://{0}", defaultNamingContext);
-
-            //' Construct directory entry for directory searcher
-            DirectoryEntry domain = new DirectoryEntry(currentDomain);
-            DirectorySearcher directorySearcher = new DirectorySearcher(domain);
-            directorySearcher.PropertiesToLoad.Add("distinguishedName");
-
-            switch (objectClass)
-            {
-                case ADObjectClass.DomainController:
-                    directorySearcher.Filter = String.Format("(&(objectClass=computer)((dNSHostName={0})))", name);
-                    break;
-                case ADObjectClass.Computer:
-                    directorySearcher.Filter = String.Format("(&(objectClass=computer)((sAMAccountName={0}$)))", name);
-                    break;
-                case ADObjectClass.Group:
-                    directorySearcher.Filter = String.Format("(&(objectClass=group)((sAMAccountName={0})))", name);
-                    break;
-                case ADObjectClass.User:
-                    directorySearcher.Filter = String.Format("(&(objectClass=user)((sAMAccountName={0})))", name);
-                    break;
-            }
-
-            //' Invoke directory searcher
-            try
-            {
-                searchResult = directorySearcher.FindOne();
-            }
-            catch (Exception ex)
-            {
-                WriteEventLog(String.Format("An error occured when attempting to locate Active Directory object. Error message: {0}", ex.Message), EventLogEntryType.Error);
-                return returnValue;
-            }
-
-            //' Return selected object type value
-            if (searchResult != null)
-            {
-                DirectoryEntry directoryObject = searchResult.GetDirectoryEntry();
-
-                if (objectType.Equals(ADObjectType.objectGuid))
-                {
-                    returnValue = directoryObject.Guid.ToString();
-                }
-
-                if (objectType.Equals(ADObjectType.distinguishedName))
-                {
-                    returnValue = String.Format("LDAP://{0}", directoryObject.Properties["distinguishedName"].Value);
-                }
-            }
-
-            //' Dispose objects
-            directorySearcher.Dispose();
-            domain.Dispose();
-
-            return returnValue;
-        }
+        
 
         /// <summary>
         ///  Code adjusted from: https://itq.nl/get-more-than-1500-members-from-an-active-directory-group/
@@ -5756,13 +5288,18 @@ namespace ConfigMgrWebService
         /// <summary>
         ///     Check if user if member of a group including nested group - https://stackoverflow.com/questions/5312744/how-to-determine-all-the-groups-a-user-belongs-to-including-nested-groups-in-a/31725157#31725157
         /// </summary>
-        private bool GetADGroupNestedMemberOf(Principal principal, GroupPrincipal group)
+        private bool GetADGroupNestedMemberOf(Principal principal, GroupPrincipal group, string domainController = null)
         {
             //' LDAP query for memberOf including nested
             string filter = String.Format("(&(sAMAccountName={0})(memberOf:1.2.840.113556.1.4.1941:={1}))", principal.SamAccountName, group.DistinguishedName);
             WriteEventLog(String.Format("Using LDAP filter for user validation: {0}", filter), EventLogEntryType.Information);
 
             DirectorySearcher searcher = new DirectorySearcher(filter);
+            string ldapString = string.IsNullOrEmpty(domainController)
+                ? string.Format("LDAP://{0}", this.GetADDefaultNamingContext())
+                : string.Format("LDAP://{0}/{1}", domainController, this.GetADDefaultNamingContext());
+
+            searcher.SearchRoot = new DirectoryEntry(ldapString);
             SearchResult result = searcher.FindOne();
 
             return result != null;

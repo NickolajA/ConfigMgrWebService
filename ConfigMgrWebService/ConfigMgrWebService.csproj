@@ -95,6 +95,18 @@
     <Compile Include="ADComputer.cs" />
     <Compile Include="ADDomain.cs" />
     <Compile Include="ADGroup.cs" />
+    <Compile Include="ADOperations\GetADComputerByDC.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="ADOperations\GetADObject.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="ADOperations\RemoveADComputerByDC.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="ADOperations\SetADOrganizationalUnitForComputer.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="ADOrganizationalUnit.cs" />
     <Compile Include="CMApplication.cs" />
     <Compile Include="CMCollection.cs" />
