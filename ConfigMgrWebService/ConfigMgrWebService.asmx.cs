@@ -419,6 +419,85 @@ namespace ConfigMgrWebService
             return applicationNames;
         }
 
+        [WebMethod(Description = "Get required applications for a specific device")]
+        public List<string> GetCMRequiredApplicationsByDevice(string secret, string deviceName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Construct applications list
+            List<string> applicationNames = new List<string>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Query for specified device name
+                SelectQuery deviceQuery = new SelectQuery("SELECT * FROM SMS_R_System WHERE Name like '" + deviceName + "'");
+                ManagementScope managementScope = new ManagementScope("\\\\" + siteServer + "\\root\\SMS\\site_" + siteCode);
+                managementScope.Connect();
+                ManagementObjectSearcher managementObjectSearcher = new ManagementObjectSearcher(managementScope, deviceQuery);
+
+                if (managementObjectSearcher.Get() != null)
+                {
+                    if (managementObjectSearcher.Get().Count == 1)
+                    {
+                        foreach (ManagementObject device in managementObjectSearcher.Get())
+                        {
+                            //' Define property variables from device
+                            string deviceNameProperty = (string)device.GetPropertyValue("Name");
+                            var resourceIDProperty = device.GetPropertyValue("ResourceId");
+
+                            //' Query for collection membership relations for device
+                            SelectQuery collMembershipQuery = new SelectQuery("SELECT * FROM SMS_FullCollectionMembership WHERE ResourceID like '" + resourceIDProperty.ToString() + "'");
+                            ManagementObjectSearcher collMembershipSearcher = new ManagementObjectSearcher(managementScope, collMembershipQuery);
+
+                            if (collMembershipSearcher.Get() != null)
+                            {
+                                foreach (ManagementObject collDevice in collMembershipSearcher.Get())
+                                {
+                                    //' Define property variables for collection
+                                    string collectionId = (string)collDevice.GetPropertyValue("CollectionID");
+
+                                    //' Query for collection
+                                    SelectQuery collectionQuery = new SelectQuery("SELECT * FROM SMS_Collection WHERE CollectionID like '" + collectionId + "'");
+                                    ManagementObjectSearcher collectionSearcher = new ManagementObjectSearcher(managementScope, collectionQuery);
+
+                                    if (collectionSearcher.Get() != null)
+                                    {
+                                        foreach (ManagementObject collection in collectionSearcher.Get())
+                                        {
+                                            //' Define collection properties
+                                            var collId = collection.GetPropertyValue("CollectionID");
+
+                                            //' Query for deployment info for collection
+                                            SelectQuery deploymentInfoQuery = new SelectQuery("SELECT * FROM SMS_DeploymentInfo WHERE CollectionID like '" + collId + "' AND DeploymentType = 31 AND DeploymentIntent = 0");
+                                            ManagementObjectSearcher deploymentInfoSearcher = new ManagementObjectSearcher(managementScope, deploymentInfoQuery);
+
+                                            if (deploymentInfoSearcher.Get() != null)
+                                            {
+                                                foreach (ManagementObject deployment in deploymentInfoSearcher.Get())
+                                                {
+                                                    //' Return application name
+                                                    string targetName = (string)deployment.GetPropertyValue("TargetName");
+                                                    applicationNames.Add(targetName);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return applicationNames;
+        }
+
         [WebMethod(Description = "Get all hidden task sequence deployments")]
         public List<CMTaskSequence> GetCMHiddenTaskSequenceDeployments(string secret)
         {
