@@ -760,6 +760,58 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Get the name of a specific device by Name")]
+        public List<CMDevice> GetCMDeviceByName(string secret,string Name)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            List<CMDevice> returnValue = new List<CMDevice>();
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                try
+                {
+                    //' Query for device name
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like '%{0}%' ORDER BY Name ASC",Name);
+                    IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
+
+                    if (result != null)
+                    {
+                        foreach (IResultObject device in result)
+                        {
+                            //' Construct new collection object
+                            CMDevice coll = new CMDevice();
+
+                            //' Add properties to collection object
+                            coll.Name = device["Name"].StringValue;
+                            returnValue.Add(coll);
+                        }
+                    }
+                    else
+                    {
+                        WriteEventLog("Query for device name returned empty", EventLogEntryType.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while querying for device name. Error message: { ex.Message }", EventLogEntryType.Error);
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
         [WebMethod(Description = "Get the UUID (SMBIOS GUID) of a specific device by name")]
         public string GetCMDeviceUUIDByName(string secret, string computerName)
         {
