@@ -782,7 +782,7 @@ namespace ConfigMgrWebService
                 try
                 {
                     //' Query for device name
-                    string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like '%{0}%'",Name);
+                    string query = String.Format("SELECT * FROM SMS_R_System WHERE Name like '%{0}%' ORDER BY Name ASC",Name);
                     IResultObject result = connection.QueryProcessor.ExecuteQuery(query);
 
                     if (result != null)
