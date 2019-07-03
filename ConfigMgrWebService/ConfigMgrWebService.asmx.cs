@@ -39,7 +39,7 @@ namespace SqlExtensions
 
 namespace ConfigMgrWebService
 {
-    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (1.7.0)", Namespace = "http://www.scconfigmgr.com")]
+    [WebService(Name = "ConfigMgr WebService", Description = "Web service for ConfigMgr Current Branch developed by Nickolaj Andersen (1.8.0)", Namespace = "http://www.scconfigmgr.com")]
     [WebServiceBinding(ConformsTo = WsiProfiles.BasicProfile1_1)]
     [System.ComponentModel.ToolboxItem(false)]
 
@@ -173,36 +173,39 @@ namespace ConfigMgrWebService
                     {
                         foreach (IResultObject result in relResults)
                         {
-                            try
+                            if (result["IsActive"].BooleanValue == true)
                             {
-                                //' Get display name for user
-                                string fullUserName = string.Empty;
-                                string userQuery = String.Format("SELECT * FROM SMS_R_User WHERE UniqueUserName = '{0}'", result["UniqueUserName"].StringValue.Replace("\\", "\\\\"));
-                                IResultObject userResults = connection.QueryProcessor.ExecuteQuery(userQuery);
-
-                                if (userResults != null)
+                                try
                                 {
-                                    foreach (IResultObject user in userResults)
+                                    //' Get display name for user
+                                    string fullUserName = string.Empty;
+                                    string userQuery = String.Format("SELECT * FROM SMS_R_User WHERE UniqueUserName = '{0}'", result["UniqueUserName"].StringValue.Replace("\\", "\\\\"));
+                                    IResultObject userResults = connection.QueryProcessor.ExecuteQuery(userQuery);
+
+                                    if (userResults != null)
                                     {
-                                        fullUserName = user["FullUserName"].StringValue;
+                                        foreach (IResultObject user in userResults)
+                                        {
+                                            fullUserName = user["FullUserName"].StringValue;
+                                        }
                                     }
+
+                                    //' Construct new relation object for return value
+                                    CMUserDeviceRelation relation = new CMUserDeviceRelation()
+                                    {
+                                        CreationTime = result["CreationTime"].DateTimeValue,
+                                        ResourceId = result["ResourceID"].StringValue,
+                                        ResourceName = result["ResourceName"].StringValue,
+                                        UniqueUserName = result["UniqueUserName"].StringValue,
+                                        FullUserName = fullUserName
+                                    };
+
+                                    relations.Add(relation);
                                 }
-
-                                //' Construct new relation object for return value
-                                CMUserDeviceRelation relation = new CMUserDeviceRelation()
+                                catch (Exception ex)
                                 {
-                                    CreationTime = result["CreationTime"].DateTimeValue,
-                                    ResourceId = result["ResourceID"].StringValue,
-                                    ResourceName = result["ResourceName"].StringValue,
-                                    UniqueUserName = result["UniqueUserName"].StringValue,
-                                    FullUserName = fullUserName
-                                };
-
-                                relations.Add(relation);
-                            }
-                            catch (Exception ex)
-                            {
-                                WriteEventLog($"An error occurred while querying unique user name. Error message: { ex.Message } ", EventLogEntryType.Error);
+                                    WriteEventLog($"An error occurred while querying unique user name. Error message: { ex.Message } ", EventLogEntryType.Error);
+                                }
                             }
                         }
                     }
@@ -2065,7 +2068,7 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
-        [WebMethod(Description = "Add a computer association between a source and destination device for a single user")]
+        [WebMethod(Description = "Add a computer association between a source and destination device and capture user state for a single user")]
         public bool AddCMComputerAssociationForUser(string secret, string sourceName, string destinationName, string userName)
         {
             MethodBase method = MethodBase.GetCurrentMethod();
@@ -2112,6 +2115,66 @@ namespace ConfigMgrWebService
 
                         //' Add list of embedded instances to params
                         execParams.Add("UserNames", userList);
+
+                        try
+                        {
+                            IResultObject execute = connection.ExecuteMethod("SMS_StateMigration", "AddAssociationEx", execParams);
+                            if (execute["ReturnValue"].IntegerValue == 0)
+                            {
+                                returnValue = true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteEventLog($"An error occured while executing AddAssociationEx method. Error message: { ex.Message }", EventLogEntryType.Error);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while attempting to create a computer association. Error message: { ex.Message }", EventLogEntryType.Error);
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Add a computer association between a source and destination device and capture user state for all users")]
+        public bool AddCMComputerAssociationForAllUsers(string secret, string sourceName, string destinationName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Connect to SMS Provider
+                SmsProvider smsProvider = new SmsProvider();
+                WqlConnectionManager connection = smsProvider.Connect(siteServer);
+
+                try
+                {
+                    //' Get source resource
+                    CMResource sourceResource = GetCMResource(sourceName, CMObjectType.System, CMResourceProperty.Name);
+
+                    //' Get destination resource
+                    CMResource destinationResource = GetCMResource(destinationName, CMObjectType.System, CMResourceProperty.Name);
+
+                    if (sourceResource != null && destinationResource != null)
+                    {
+                        //' Construct in params for execution
+                        UInt32 migBehavior = 0;
+                        Dictionary<string, object> execParams = new Dictionary<string, object>();
+                        execParams.Add("SourceClientResourceID", sourceResource.ResourceID);
+                        execParams.Add("RestoreClientResourceID", destinationResource.ResourceID);
+                        execParams.Add("MigrationBehavior", migBehavior);
 
                         try
                         {
@@ -2808,6 +2871,86 @@ namespace ConfigMgrWebService
                     catch (Exception ex)
                     {
                         WriteEventLog(String.Format("An error occured when attempting to add a user as ManagedBy for a computer object in Active Directory. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get a specific attribute value for specific an Active Directory computer object")]
+        public string GetADComputerAttributeValue(string secret, string computerName, string attributeName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Get AD computer object distinguished name
+                string computerDistinguishedName = GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName);
+
+                if (!String.IsNullOrEmpty(computerDistinguishedName))
+                {
+                    try
+                    {
+                        //' Retrieve specific attribute value
+                        DirectoryEntry computerEntry = new DirectoryEntry(computerDistinguishedName);
+                        returnValue = computerEntry.Properties[attributeName].Value.ToString();
+
+                        //' Dispose object
+                        computerEntry.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format($"An error occured when attempting to retrieve value for attribute '{ attributeName }' from computer object '{ computerName }' in Active Directory. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Get a specific attribute value for specific an Active Directory user object")]
+        public string GetADUserAttributeValue(string secret, string userName, string attributeName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            string returnValue = string.Empty;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Get AD user object distinguished name
+                string computerDistinguishedName = GetADObject(userName, ADObjectClass.User, ADObjectType.distinguishedName);
+
+                if (!String.IsNullOrEmpty(computerDistinguishedName))
+                {
+                    try
+                    {
+                        //' Retrieve specific attribute value
+                        DirectoryEntry userEntry = new DirectoryEntry(computerDistinguishedName);
+                        returnValue = userEntry.Properties[attributeName].Value.ToString();
+
+                        //' Dispose object
+                        userEntry.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format($"An error occured when attempting to retrieve value for attribute '{ attributeName }' from user object '{ userName }' in Active Directory. Error message: {0}", ex.Message), EventLogEntryType.Error);
                     }
                 }
             }
@@ -5228,7 +5371,7 @@ namespace ConfigMgrWebService
                 //' Construct SQL statement
                 SqlCommand command = connection.CreateCommand();
                 StringBuilder sqlString = new StringBuilder();
-                sqlString.Append(String.Format("SELECT ID, OSDComputerName FROM Settings WHERE ID like @ID"));
+                sqlString.Append(String.Format("SELECT ID, OSDComputerName FROM Settings WHERE ID like @ID AND OSDComputerName IS NOT NULL"));
 
                 command.Parameters.Add("@ID", SqlDbType.NVarChar).Value = identity;
                 command.CommandText = sqlString.ToString();
@@ -5447,7 +5590,7 @@ namespace ConfigMgrWebService
                     {
                         //' Get the ImageIndex property from task sequence step
                         IResultObject tsPackage = connection.GetInstance(String.Format("SMS_TaskSequencePackage.PackageID='{0}'", tsPackageId));
-                        string imageIndex = GetTSIndexSelection(tsPackage);
+                        string imageIndex = GetTSIndexSelection(tsPackage, osImageId);
 
                         string imageQuery = String.Format("SELECT * FROM SMS_ImageInformation WHERE PackageID like '{0}' AND Index like '{1}'", osImageId, imageIndex);
                         IResultObject osImageProps = connection.QueryProcessor.ExecuteQuery(imageQuery);
@@ -5500,7 +5643,7 @@ namespace ConfigMgrWebService
                     {
                         //' Get the ImageIndex property from task sequence step
                         IResultObject tsPackage = connection.GetInstance(String.Format("SMS_TaskSequencePackage.PackageID='{0}'", tsPackageId));
-                        string imageIndex = GetTSIndexSelection(tsPackage);
+                        string imageIndex = GetTSIndexSelection(tsPackage, osImageId);
 
                         string imageQuery = String.Format("SELECT * FROM SMS_ImageInformation WHERE PackageID like '{0}' AND Index like '{1}'", osImageId, imageIndex);
                         IResultObject osImageProps = connection.QueryProcessor.ExecuteQuery(imageQuery);
@@ -5525,7 +5668,7 @@ namespace ConfigMgrWebService
             return osImageList;
         }
 
-        private string GetTSIndexSelection(IResultObject taskSequencePackage)
+        private string GetTSIndexSelection(IResultObject taskSequencePackage, string imageId)
         {
             //' Connect to SMS Provider
             SmsProvider smsProvider = new SmsProvider();
@@ -5539,13 +5682,13 @@ namespace ConfigMgrWebService
             var outParams = connection.ExecuteMethod("SMS_TaskSequencePackage", "GetSequence", parameters);
             taskSequence = outParams.GetSingleItem("TaskSequence");
 
-            string imageIndex = GetTSSteps(taskSequence);
+            string imageIndex = GetTSSteps(taskSequence, imageId);
 
             return imageIndex;
 
         }
 
-        private string GetTSSteps(IResultObject taskSequence)
+        private string GetTSSteps(IResultObject taskSequence, string imageId)
         {
             List<IResultObject> tsSteps = taskSequence.GetArrayItems("Steps");
 
@@ -5553,19 +5696,25 @@ namespace ConfigMgrWebService
             {
                 if (step["__CLASS"].StringValue == "SMS_TaskSequence_ApplyOperatingSystemAction")
                 {
-                    int imageIndex = step["ImageIndex"].IntegerValue;
-                    return imageIndex.ToString();
+                    if (step["ImagePackageID"].StringValue == imageId)
+                    {
+                        int imageIndex = step["ImageIndex"].IntegerValue;
+                        return imageIndex.ToString();
+                    }
                 }
 
                 if (step["__CLASS"].StringValue == "SMS_TaskSequence_UpgradeOperatingSystemAction")
                 {
-                    int imageIndex = step["InstallEditionIndex"].IntegerValue;
-                    return imageIndex.ToString();
+                    if (step["InstallPackageID"].StringValue == imageId)
+                    {
+                        int imageIndex = step["InstallEditionIndex"].IntegerValue;
+                        return imageIndex.ToString();
+                    }
                 }
 
                 if (step["__CLASS"].StringValue == "SMS_TaskSequence_Group")
                 {
-                    string result = GetTSSteps(step);
+                    string result = GetTSSteps(step, imageId);
                     if (result != null)
                     {
                         return result;
