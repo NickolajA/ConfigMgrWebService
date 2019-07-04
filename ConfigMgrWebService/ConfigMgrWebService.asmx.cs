@@ -5819,7 +5819,7 @@ namespace ConfigMgrWebService
 
             //' Get default naming context of current domain
             string defaultNamingContext = GetADDefaultNamingContext();
-            string currentDomain = String.Format("LDAP://{0}", defaultNamingContext);
+            string currentDomain = String.Format("GC://{0}", defaultNamingContext);
 
             //' Construct directory entry for directory searcher
             DirectoryEntry domain = new DirectoryEntry(currentDomain);
