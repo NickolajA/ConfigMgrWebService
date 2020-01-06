@@ -3206,9 +3206,6 @@ namespace ConfigMgrWebService
                 {
                     WriteEventLog($"An error occurred while retrieving Active Directory group memberships for user. Error message: {ex.Message }", EventLogEntryType.Error);
                 }
-            } else
-            {
-                WriteEventLog("Key mismatch " + secret + " != " + secretKey, EventLogEntryType.Error);
             }
 
             MethodEnd(method);
