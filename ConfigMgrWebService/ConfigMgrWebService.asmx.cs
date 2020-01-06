@@ -3173,6 +3173,48 @@ namespace ConfigMgrWebService
             return returnValue;
         }
 
+        [WebMethod(Description = "Get Active Directory groups for a specific computer")]
+        public List<ADGroup> GetADGroupsByComputer(string secret, string computerName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Set return value variable
+            List<ADGroup> returnValue = new List<ADGroup>();
+
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                try
+                {
+                    //' Get AD computer object
+                    string computerDistinguishedName = GetADObject(computerName, ADObjectClass.Computer, ADObjectType.distinguishedName);
+
+                    //' Get AD groups for computer distinguished name
+                    ArrayList groupMemberships = new ArrayList();
+                    ArrayList groups = GetADAttributeValues("memberOf", computerDistinguishedName, groupMemberships, true);
+
+                    foreach(string group in groups)
+                    {
+                        string attributeValue = GetADAttributeValue(group, "samAccountName");
+                        returnValue.Add(new ADGroup() { DistinguishedName = group, samAccountName = attributeValue });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteEventLog($"An error occurred while retrieving Active Directory group memberships for user. Error message: {ex.Message }", EventLogEntryType.Error);
+                }
+            } else
+            {
+                WriteEventLog("Key mismatch " + secret + " != " + secretKey, EventLogEntryType.Error);
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
         [WebMethod(Description = "Set the description field for a computer in Active Directory")]
         public bool SetADComputerDescription(string secret, string computerName, string description)
         {
