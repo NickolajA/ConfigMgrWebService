@@ -2788,6 +2788,140 @@ namespace ConfigMgrWebService
             return taskSequence;
         }
 
+        [WebMethod(Description = "Create an Active Directory group in a specific organizational unit")]
+        public bool CreateADGroup(string secret, string organizationalUnitLocation, string groupName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Determine if ldap prefix needs to be appended
+                if (organizationalUnitLocation.StartsWith("LDAP://") == false)
+                {
+                    organizationalUnitLocation = String.Format("LDAP://{0}", organizationalUnitLocation);
+                }
+
+                //' Get AD group
+                string currentDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
+                
+                    if (String.IsNullOrEmpty(currentDistinguishedName))
+                    {
+                        try
+                        {
+                            //' Create group in organizational unit location                            
+                            string groupCNName = string.Format("CN={0}", groupName);
+                            DirectoryEntry groupLocation = new DirectoryEntry(organizationalUnitLocation);
+                            DirectoryEntry newGroup = groupLocation.Children.Add(groupCNName,"group");
+                            newGroup.Properties["sAmAccountName"].Value = groupName;
+                            newGroup.CommitChanges();
+
+                            returnValue = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteEventLog(String.Format("An error occured when attempting to create the Active Directory group object. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                        }
+                    }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+        
+        [WebMethod(Description = "Set display name field for a group in Active Directory")]
+        public bool SetADGroupDisplayName(string secret, string groupName, string displayName)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Get AD object distinguished name for group
+                string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
+
+                if (!String.IsNullOrEmpty(groupDistinguishedName))
+                {
+                    try
+                    {
+                        //' Set group object display name
+                        DirectoryEntry groupEntry = new DirectoryEntry(groupDistinguishedName);
+                        groupEntry.Properties["displayName"].Value = displayName;
+                        groupEntry.CommitChanges();
+
+                        //' Dispose object
+                        groupEntry.Dispose();
+
+                        returnValue = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to set the diplay namme field of a group object in Active Directory from a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
+        [WebMethod(Description = "Set the description field for a group in Active Directory")]
+        public bool SetADGroupDescription(string secret, string groupName, string description)
+        {
+            MethodBase method = MethodBase.GetCurrentMethod();
+            MethodBegin(method);
+
+            //' Variable for return value
+            bool returnValue = false;
+
+            //' Validate secret key
+            if (secret == secretKey)
+            {
+                //' Log that secret key was accepted
+                WriteEventLog("Secret key was accepted", EventLogEntryType.Information);
+
+                //' Get AD object distinguished name for group
+                string groupDistinguishedName = GetADObject(groupName, ADObjectClass.Group, ADObjectType.distinguishedName);
+                
+                if (!String.IsNullOrEmpty(groupDistinguishedName))
+                {
+                    try
+                    {
+                        //' Set group object description
+                        DirectoryEntry groupEntry = new DirectoryEntry(groupDistinguishedName);
+                        groupEntry.Properties["description"].Value = description;
+                        groupEntry.CommitChanges();
+
+                        //' Dispose object
+                        groupEntry.Dispose();
+
+                        returnValue = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteEventLog(String.Format("An error occured when attempting to set the description field of a group object in Active Directory from a group. Error message: {0}", ex.Message), EventLogEntryType.Error);
+                    }
+                }
+            }
+
+            MethodEnd(method);
+            return returnValue;
+        }
+
         [WebMethod(Description = "Move a computer in Active Directory to a specific organizational unit")]
         public bool SetADOrganizationalUnitForComputer(string secret, string organizationalUnitLocation, string computerName)
         {
